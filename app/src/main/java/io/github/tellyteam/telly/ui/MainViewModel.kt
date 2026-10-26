@@ -43,14 +43,12 @@ import io.github.tellyteam.telly.data.store.Scoped
 import io.github.tellyteam.telly.data.store.WatchProgressStore
 import io.github.tellyteam.telly.data.syncIdentity
 import io.github.tellyteam.telly.data.withAllowCleartext
-import io.github.tellyteam.telly.data.sync.SharedLogin
 import io.github.tellyteam.telly.data.sync.SyncBundle
 import io.github.tellyteam.telly.data.sync.SyncConfig
 import io.github.tellyteam.telly.data.sync.SyncCrypto
 import io.github.tellyteam.telly.data.sync.SyncEntry
 import io.github.tellyteam.telly.data.sync.SyncException
 import io.github.tellyteam.telly.data.sync.SyncLocal
-import io.github.tellyteam.telly.data.sync.SyncSettings
 import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -175,9 +173,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _syncUnlocked = MutableStateFlow(container.syncSettings.unlocked || _sync.value.config != null)
     val syncUnlocked: StateFlow<Boolean> = _syncUnlocked
 
-    /** Whether this device shares provider logins with linked devices that do too (opt-in). */
-    private val _shareLogins = MutableStateFlow(container.syncSettings.shareLogins)
-    val shareLogins: StateFlow<Boolean> = _shareLogins
     private val syncing = Mutex()
     private var syncSoonJob: Job? = null
 
@@ -396,8 +391,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val list = _providers.value
         val old = list.firstOrNull { it.id == saved.id }
         if (old != null && old.provider.syncIdentity != saved.provider.syncIdentity) {
-            // A new server or login: the old one's lists go, and linked devices sharing logins hear it's gone.
-            forgetLogin(old.provider)
+            // A new server or login: the old one's lists go.
             viewModelScope.launch { repo.clearSavedCatalogues(old.provider) }
         }
         saveProviders(if (old != null) list.map { if (it.id == saved.id) saved else it } else list + saved)
@@ -408,15 +402,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun saveProviders(list: List<SavedProvider>) {
         container.providerStore.saveAll(list)
         _providers.value = list
-        // Adding, changing or removing a provider is news for devices sharing logins.
-        if (container.syncSettings.shareLogins) syncSoon()
     }
 
     /** Removes a provider from this device, with its lists and everything watched with it. */
-    fun removeProvider(id: String, at: Long = System.currentTimeMillis()) {
+    fun removeProvider(id: String) {
         val gone = _providers.value.firstOrNull { it.id == id } ?: return
         saveProviders(_providers.value.filter { it.id != id })
-        forgetLogin(gone.provider, at)
         // Its history holds stream URLs, which carry the login.
         Scoped.delete(getApplication(), id)
         viewModelScope.launch { repo.clearSavedCatalogues(gone.provider) }
@@ -444,12 +435,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         saveProviders(list.map { if (it.id == id) updated else it })
         container.networkPolicy.allowCleartext = allow
         (_state.value as? UiState.Ready)?.let { _state.value = it.copy(provider = updated.provider) }
-    }
-
-    private fun forgetLogin(p: Provider, at: Long = System.currentTimeMillis()) {
-        val now = System.currentTimeMillis()
-        container.providerStore.removedLogins = (container.providerStore.removedLogins + (p.syncIdentity to at))
-            .filterValues { now - it < io.github.tellyteam.telly.data.sync.SyncParcel.TOMBSTONE_MS }
     }
 
     fun loadFilms(force: Boolean = false) = loadSection(_films, force) { p, source -> repo.filmGroups(p, source) }
@@ -636,16 +621,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Each saved provider's records travel in their own section, matched to other devices' by
      * provider tag. The provider in use takes in everything; the others take in progress, My List
      * and removals now, and Continue watching when they're next in use (resolving it needs their
-     * lists). With sharing on, logins travel too, and other devices' new, changed and removed
-     * providers come in.
+     * lists). Provider logins never travel: each device signs in to its providers itself.
      */
     private suspend fun runSync(config: SyncConfig): String? {
         if (!syncing.tryLock()) return null
         try {
-            val sharing = container.syncSettings.shareLogins
             val providers = _providers.value
-            // Without a provider there's nothing to sync, except logins shared with this device.
-            if (providers.isEmpty() && !sharing) return null
+            // Without a provider there's nothing to sync.
+            if (providers.isEmpty()) return null
             _sync.value = _sync.value.copy(busy = true, error = null)
             val app = getApplication<Application>()
             val keys = SyncCrypto.deriveKeys(config.code)
@@ -661,7 +644,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // older device's My List would turn up under every provider switched to.
             val current = records.entries.singleOrNull()?.key
             val now = System.currentTimeMillis()
-            val own = SyncBundle(now, locals.mapValues { SyncLocal.toParcel(it.value, now) }, if (sharing) ownLogins(keys) else null)
+            val own = SyncBundle(now, locals.mapValues { SyncLocal.toParcel(it.value, now) })
             val merged = container.syncClient.syncOnce(config.relay, keys, config.device, own, current, now)
             if (_sync.value.config != config) return null
             for ((tag, r) in records) {
@@ -676,8 +659,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 r.favourites.replace(next.favourites, next.listChanges)
             }
             _sync.value = _sync.value.copy(busy = false, lastSyncedAt = System.currentTimeMillis())
-            // New or changed providers from other devices: their records come in on the next round.
-            if (sharing && merged.logins != null && applyLogins(merged.logins, keys)) syncSoon()
             return null
         } catch (e: CancellationException) {
             _sync.value = _sync.value.copy(busy = false)
@@ -689,72 +670,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } finally {
             syncing.unlock()
         }
-    }
-
-    // ---- Shared logins (opt-in) ----
-
-    /** Turns sharing provider logins with linked devices on or off, and syncs. */
-    fun setShareLogins(on: Boolean) {
-        container.syncSettings.shareLogins = on
-        _shareLogins.value = on
-        syncNow(force = true)
-    }
-
-    /** This device's logins (and removals) to share, by tag. */
-    private fun ownLogins(keys: SyncCrypto.Keys): Map<String, SharedLogin> {
-        val out = LinkedHashMap<String, SharedLogin>()
-        container.providerStore.removedLogins.forEach { (identity, at) -> out[SyncCrypto.providerTag(keys, identity)] = SharedLogin(at, null) }
-        _providers.value.forEach { saved ->
-            val tag = SyncCrypto.providerTag(keys, saved.provider.syncIdentity)
-            if ((out[tag]?.at ?: -1) <= saved.changedAt) out[tag] = SharedLogin(saved.changedAt, saved.provider)
-        }
-        return out
-    }
-
-    /** Takes in other devices' logins: new providers, newer logins, and removals. Returns whether anything changed. */
-    private fun applyLogins(logins: Map<String, SharedLogin>, keys: SyncCrypto.Keys): Boolean {
-        var changed = false
-        for ((tag, login) in logins) {
-            val mine = _providers.value.firstOrNull { SyncCrypto.providerTag(keys, it.provider.syncIdentity) == tag }
-            if (mine != null && mine.changedAt >= login.at) continue
-            val p = login.provider
-            when {
-                p == null -> if (mine != null) { removeProvider(mine.id, login.at); changed = true }
-                mine != null -> {
-                    val updated = mine.copy(provider = p, changedAt = login.at)
-                    saveProviders(_providers.value.map { if (it.id == mine.id) updated else it })
-                    if (mine.id == _activeId.value) {
-                        container.networkPolicy.allowCleartext = p.allowCleartext
-                        (_state.value as? UiState.Ready)?.let { _state.value = it.copy(provider = p) }
-                    }
-                    changed = true
-                }
-                (container.providerStore.removedLogins[p.syncIdentity] ?: -1) < login.at -> {
-                    val saved = SavedProvider(ProviderStore.newId(), p, login.at)
-                    saveProviders(_providers.value + saved)
-                    changed = true
-                    // A device with no provider yet starts with the first one shared with it.
-                    if (_activeId.value == null) activate(saved)
-                }
-            }
-        }
-        return changed
-    }
-
-    /**
-     * A device with no provider yet joins a household and takes the providers shared with it:
-     * links with [code], turns on sharing logins, and signs in with the first one shared.
-     * Returns an error message, or null.
-     */
-    suspend fun joinForLogins(code: String): String? {
-        container.syncSettings.shareLogins = true
-        _shareLogins.value = true
-        container.syncSettings.unlocked = true
-        _syncUnlocked.value = true
-        startSync(code, SyncSettings.DEFAULT_RELAY)?.let { return it }
-        return if (_providers.value.isEmpty()) {
-            "Linked, but no providers were shared yet. On a device that has them, turn on Settings → Sync → Share provider logins, then try again here."
-        } else null
     }
 
     /** A shared history entry as one this device can play, from its own lists and login. */

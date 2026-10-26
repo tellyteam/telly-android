@@ -12,8 +12,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
 import io.github.tellyteam.telly.data.DEFAULT_PLAYLIST_NAME
 import io.github.tellyteam.telly.data.DEFAULT_PROVIDER_NAME
 import io.github.tellyteam.telly.data.Provider
@@ -31,16 +29,14 @@ class ProviderStore(context: Context) {
     private val prefs = context.getSharedPreferences("provider", Context.MODE_PRIVATE)
     private val cipher = KeystoreCipher("telly_provider")
 
-    /**
-     * Every saved provider; empty when there are none or they can no longer be decrypted. One saved
-     * without a time (from before providers had one) gets now: it's still here, so for shared logins
-     * it's newer than any older removal of it on another device.
-     */
-    fun loadAll(now: Long = System.currentTimeMillis()): List<SavedProvider> {
-        val list = runCatching { prefs.getString(LIST, null)?.let { decodeList(cipher.decrypt(it)) } }.getOrNull().orEmpty()
-        if (list.none { it.changedAt == 0L }) return list
-        return list.map { if (it.changedAt == 0L) it.copy(changedAt = now) else it }.also(::saveAll)
+    init {
+        // Sharing logins between devices was removed: forget what it kept.
+        if (prefs.contains(REMOVED)) prefs.edit().remove(REMOVED).apply()
     }
+
+    /** Every saved provider; empty when there are none or they can no longer be decrypted. */
+    fun loadAll(): List<SavedProvider> =
+        runCatching { prefs.getString(LIST, null)?.let { decodeList(cipher.decrypt(it)) } }.getOrNull().orEmpty()
 
     fun saveAll(list: List<SavedProvider>) {
         prefs.edit().putString(LIST, cipher.encrypt(encodeList(list))).apply()
@@ -65,18 +61,11 @@ class ProviderStore(context: Context) {
         return saved.id
     }
 
-    /** Removed providers, by sync identity, and when: shared as removals while logins are shared. */
-    var removedLogins: Map<String, Long>
-        get() = runCatching { prefs.getString(REMOVED, null)?.let { json.decodeFromString(removedSerializer, cipher.decrypt(it)) } }.getOrNull().orEmpty()
-        set(value) = prefs.edit().putString(REMOVED, cipher.encrypt(json.encodeToString(removedSerializer, value))).apply()
-
     internal companion object {
         private const val OLD_KEY = "provider"
         private const val LIST = "providers"
         private const val ACTIVE = "active"
         private const val REMOVED = "removedLogins"
-        private val json = Json { ignoreUnknownKeys = true }
-        private val removedSerializer = MapSerializer(String.serializer(), Long.serializer())
         private val random = SecureRandom()
 
         fun newId(): String = ByteArray(6).also(random::nextBytes).toHex()

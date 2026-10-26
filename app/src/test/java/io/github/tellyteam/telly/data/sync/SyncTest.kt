@@ -197,7 +197,7 @@ class SyncLocalTest {
     }
 }
 
-/** Version 2: a section per provider, and the opt-in logins. The vectors are PROTOCOL.md's, as the Apple and LG apps pin them. */
+/** Version 2: a section per provider. The vectors are PROTOCOL.md's, as the Apple and LG apps pin them. */
 class SyncBundleTest {
     private val keys = SyncCrypto.deriveKeys("0123456789ABCDEF")
 
@@ -248,48 +248,11 @@ class SyncBundleTest {
     }
 
     @Test
-    fun `logins box matches the shared vector`() {
-        assertEquals("8bef4c523a4e523d49d504c587836e5b804b7fc42d498a2bd59c8a2ecb7dd49f", keys.logins.toHex())
-        val sealed = SyncCrypto.sealLogins(keys, "00112233aabbccdd", "{}", ByteArray(12) { it.toByte() })
-        assertEquals("01000102030405060708090a0bb8e5248c11cad1416ea6d5dfb19164d7d67c", sealed.toHex())
-        assertEquals("{}", SyncCrypto.openLogins(keys, "00112233aabbccdd", sealed))
-        // Not with the parcel key, and not as another device's.
-        assertNull(SyncCrypto.open(keys, "00112233aabbccdd", sealed))
-        assertNull(SyncCrypto.openLogins(keys, "aabbccddeeff0011", sealed))
-    }
-
-    @Test
-    fun `logins travel sealed and come back`() {
-        val home = Provider.Xtream("Home", " Example.com:8080/ ", "me", "pw1", true)
-        val tag = SyncCrypto.providerTag(keys, home.syncIdentity)
-        val gone = "0123456789abcdef"
-        val text = SyncBundle(50, logins = mapOf(tag to SharedLogin(40, home), gone to SharedLogin(30, null))).toJson(keys, "00112233aabbccdd")
-        assertFalse("the password never appears outside the logins box", "pw1" in text)
-        val back = SyncBundle.parse(text, tag, keys, "00112233aabbccdd")!!
-        assertEquals(SharedLogin(40, home), back.logins?.get(tag))
-        assertEquals(SharedLogin(30, null), back.logins?.get(gone))
-        // Without the keys, no logins.
-        assertNull(SyncBundle.parse(text, tag)?.logins)
-    }
-
-    @Test
-    fun `drops a login filed under another tag`() {
-        val wrong = """{"aaaaaaaaaaaaaaaa":{"at":1,"kind":"m3u","name":"x","url":"https://example.com/list.m3u","allowCleartext":false}}"""
-        assertTrue(SharedLogin.parse(wrong, keys).isEmpty())
-        val right = """{"ff2163ea5d23fc01":{"at":1,"kind":"m3u","name":"x","url":"https://example.com/list.m3u","allowCleartext":false}}"""
-        assertEquals(1, SharedLogin.parse(right, keys).size)
-    }
-
-    @Test
-    fun `newest login wins and old removals go`() {
-        val a = Provider.M3u("A", "https://a.example/1.m3u", false)
-        val b = Provider.M3u("A renamed", "https://a.example/1.m3u", false)
-        val own = SyncBundle(10, logins = mapOf("1111111111111111" to SharedLogin(5, a)))
-        val other = SyncBundle(10, logins = mapOf("1111111111111111" to SharedLogin(9, b), "2222222222222222" to SharedLogin(1, null)))
-        val m = SyncBundle.merge(own, listOf(other), 1 + SyncParcel.TOMBSTONE_MS + 1)
-        assertEquals(b, m.logins?.get("1111111111111111")?.provider)
-        assertNull("a removal older than 90 days is forgotten", m.logins?.get("2222222222222222"))
-        // A device that doesn't share logins takes none in.
-        assertNull(SyncBundle.merge(SyncBundle(10), listOf(other), 20).logins)
+    fun `an older app's logins are ignored and never written back`() {
+        val old = """{"v":2,"at":5,"providers":{"aaaaaaaaaaaaaaaa":{"progress":{"movie/9.mp4":[1,2,5]}}},"logins":"AQABAgMEBQYHCAkKC7jlJIwRytFBbqbV37GRZNfWfA"}"""
+        val b = SyncBundle.parse(old, null)!!
+        assertEquals(1L, b.sections["aaaaaaaaaaaaaaaa"]?.progress?.get("movie/9.mp4")?.positionMs)
+        val merged = SyncBundle.merge(SyncBundle(6, mapOf("aaaaaaaaaaaaaaaa" to SyncParcel(6))), listOf(b), 7)
+        assertFalse("logins" in merged.toJson())
     }
 }

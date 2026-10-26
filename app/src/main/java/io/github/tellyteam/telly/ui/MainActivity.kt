@@ -54,7 +54,6 @@ import io.github.tellyteam.telly.ui.home.rememberShelves
 import io.github.tellyteam.telly.ui.player.PlayerActivity
 import io.github.tellyteam.telly.ui.shell.AppShell
 import io.github.tellyteam.telly.ui.shell.Destination
-import io.github.tellyteam.telly.ui.setup.JoinOptions
 import io.github.tellyteam.telly.ui.setup.SetupScreen
 import io.github.tellyteam.telly.ui.theme.TellyTheme
 import io.github.tellyteam.telly.ui.theme.TellyWordmark
@@ -80,18 +79,11 @@ class MainActivity : ComponentActivity() {
                     when (val s = state) {
                         is UiState.Setup -> {
                             val sync by vm.sync.collectAsStateWithLifecycle()
-                            val syncUnlocked by vm.syncUnlocked.collectAsStateWithLifecycle()
                             SetupScreen(
                                 existing = s.existing,
                                 onConnect = vm::submitProvider,
                                 onForget = if (s.existing != null) vm::forgetAttempt else null,
-                                join = JoinOptions(
-                                    shown = syncUnlocked,
-                                    linked = sync.config != null,
-                                    onUnlock = { if (!syncUnlocked) vm.toggleSyncUnlocked() },
-                                    onJoin = vm::joinForLogins,
-                                    onStopSync = vm::stopSync,
-                                ),
+                                onStopSync = if (sync.config != null) vm::stopSync else null,
                             )
                         }
                         is UiState.Loading -> Centered {
@@ -141,7 +133,6 @@ class MainActivity : ComponentActivity() {
         val syncUnlocked by vm.syncUnlocked.collectAsStateWithLifecycle()
         val providers by vm.providers.collectAsStateWithLifecycle()
         val activeId by vm.activeId.collectAsStateWithLifecycle()
-        val shareLogins by vm.shareLogins.collectAsStateWithLifecycle()
         val progress = container.watchProgress
         val hasVod = s.provider is Provider.Xtream
         val destinations = remember(hasVod) {
@@ -254,8 +245,6 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(this@MainActivity, if (shown) "Sync is now in Settings" else "Sync hidden", Toast.LENGTH_SHORT).show()
                     },
                     onStartSync = vm::startSync,
-                    shareLogins = shareLogins,
-                    onSetShareLogins = vm::setShareLogins,
                     onSyncNow = { vm.syncNow(force = true) },
                     onStopSync = vm::stopSync,
                     onClearProgress = {

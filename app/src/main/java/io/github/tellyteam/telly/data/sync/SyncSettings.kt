@@ -13,6 +13,11 @@ class SyncSettings(context: Context) {
     private val prefs = context.getSharedPreferences("sync", Context.MODE_PRIVATE)
     private val cipher = KeystoreCipher("telly_sync")
 
+    init {
+        // Sharing logins between devices was removed: forget the setting.
+        if (prefs.contains(SHARE_LOGINS)) prefs.edit().remove(SHARE_LOGINS).apply()
+    }
+
     fun load(): SyncConfig? = prefs.getString(KEY, null)?.let { stored ->
         runCatching { json.decodeFromString(SyncConfig.serializer(), cipher.decrypt(stored)) }.getOrNull()
     }?.takeIf { SyncCrypto.normaliseCode(it.code) != null && it.relay.startsWith("https://") }
@@ -25,11 +30,6 @@ class SyncSettings(context: Context) {
     var unlocked: Boolean
         get() = prefs.getBoolean(UNLOCKED, false)
         set(value) = prefs.edit().putBoolean(UNLOCKED, value).apply()
-
-    /** Share provider logins with linked devices that do too (opt-in). */
-    var shareLogins: Boolean
-        get() = prefs.getBoolean(SHARE_LOGINS, false)
-        set(value) = prefs.edit().putBoolean(SHARE_LOGINS, value).apply()
 
     fun clear() {
         prefs.edit().remove(KEY).apply()

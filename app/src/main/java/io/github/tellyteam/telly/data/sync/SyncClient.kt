@@ -29,12 +29,12 @@ class SyncClient(private val http: OkHttpClient) {
             val from = (p["device"] as? JsonPrimitive)?.content ?: return@mapNotNull null
             if (from == device) return@mapNotNull null
             val box = (p["body"] as? JsonPrimitive)?.content?.let(Base64Text::decode) ?: return@mapNotNull null
-            SyncCrypto.open(keys, from, box)?.let { SyncBundle.parse(it, current, keys, from) }
+            SyncCrypto.open(keys, from, box)?.let { SyncBundle.parse(it, current) }
         }
     }
 
     suspend fun push(relay: String, keys: SyncCrypto.Keys, device: String, bundle: SyncBundle) {
-        val body = SyncCrypto.seal(keys, device, bundle.toJson(keys, device))
+        val body = SyncCrypto.seal(keys, device, bundle.toJson())
         send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/$device").put(body.toRequestBody(OCTETS)), keys)
     }
 

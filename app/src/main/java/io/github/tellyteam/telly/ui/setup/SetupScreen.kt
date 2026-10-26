@@ -17,14 +17,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -40,19 +33,6 @@ import io.github.tellyteam.telly.ui.theme.TellyWordmark
 import io.github.tellyteam.telly.ui.theme.TvTextField
 import io.github.tellyteam.telly.ui.theme.focusRing
 
-/**
- * Getting providers from another device on the sign-in screen (a hidden feature, like sync: seven
- * presses on the wordmark show it), or, for a device still linked with no provider, a way out.
- */
-class JoinOptions(
-    val shown: Boolean,
-    val linked: Boolean,
-    val onUnlock: () -> Unit,
-    /** Returns an error message, or null. */
-    val onJoin: suspend (code: String) -> String?,
-    val onStopSync: () -> Unit,
-)
-
 @Composable
 fun SetupScreen(
     existing: Provider?,
@@ -60,7 +40,8 @@ fun SetupScreen(
     onForget: (() -> Unit)?,
     /** Set when opened from Settings: Back returns without changing anything. */
     onCancel: (() -> Unit)? = null,
-    join: JoinOptions? = null,
+    /** Set while this device is still linked for sync with no provider: a way to unlink. */
+    onStopSync: (() -> Unit)? = null,
 ) {
     BackHandler(enabled = onCancel != null) { onCancel?.invoke() }
     val xtream = existing as? Provider.Xtream
@@ -73,8 +54,6 @@ fun SetupScreen(
     var url by rememberSaveable { mutableStateOf(m3u?.url ?: "") }
     var allowCleartext by rememberSaveable { mutableStateOf(existing?.allowCleartext ?: false) }
     var showPassword by rememberSaveable { mutableStateOf(false) }
-    var wordmarkPresses by remember { mutableStateOf(0) }
-    LaunchedEffect(wordmarkPresses) { if (wordmarkPresses > 0) { delay(3_000); wordmarkPresses = 0 } }
 
     val canConnect = if (useXtream) server.isNotBlank() && username.isNotBlank() && password.isNotBlank() else url.isNotBlank()
 
@@ -83,15 +62,7 @@ fun SetupScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TellyWordmark(
-                fontSize = 48.sp,
-                modifier = if (join == null) Modifier else Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) {
-                    if (++wordmarkPresses >= 7) { wordmarkPresses = 0; join.onUnlock() }
-                },
-            )
+            TellyWordmark(fontSize = 48.sp)
             Text(if (existing == null) "Add your IPTV provider" else "Your IPTV provider", style = MaterialTheme.typography.headlineSmall)
             Text(
                 "Details are stored encrypted on this device and sent only to your provider.",
@@ -149,46 +120,15 @@ fun SetupScreen(
                     OutlinedButton(onClick = onForget, modifier = Modifier.focusRing()) { Text("Remove provider") }
                 }
             }
-            if (join != null && existing == null && onCancel == null) JoinSection(join)
+            if (onStopSync != null && existing == null && onCancel == null) {
+                Text("This device is still linked for sync", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
+                Text(
+                    "Its progress syncs again once you add a provider.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = onStopSync, modifier = Modifier.focusRing()) { Text("Stop syncing on this device") }
+            }
         }
     }
-}
-
-@Composable
-private fun JoinSection(join: JoinOptions) {
-    val scope = rememberCoroutineScope()
-    var code by rememberSaveable { mutableStateOf("") }
-    var joining by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    if (join.linked) {
-        Text("This device is still linked for sync", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
-        Text(
-            "Providers your other devices share arrive here on their own, if you share logins.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedButton(onClick = join.onStopSync, modifier = Modifier.focusRing()) { Text("Stop syncing on this device") }
-        return
-    }
-    if (!join.shown) return
-    Text("Or get your providers from another device", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
-    Text(
-        "On a device that has them, turn on Settings → Sync → Share provider logins, then enter its sync code here.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    TvTextField("Sync code, e.g. ABCD-EFGH-JKMN-PQRS", code, KeyboardType.Ascii, modifier = Modifier.fillMaxWidth()) { code = it }
-    Button(
-        enabled = code.isNotBlank() && !joining,
-        modifier = Modifier.focusRing(),
-        onClick = {
-            joining = true
-            error = null
-            scope.launch {
-                error = join.onJoin(code)
-                joining = false
-            }
-        },
-    ) { Text(if (joining) "Linking…" else "Get providers") }
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 }

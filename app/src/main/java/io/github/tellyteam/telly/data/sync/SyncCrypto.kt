@@ -21,8 +21,6 @@ object SyncCrypto {
         val auth: String,
         /** Keys provider tags (see [providerTag]). */
         val provider: ByteArray,
-        /** Seals the opt-in logins box (see [sealLogins]). */
-        val logins: ByteArray,
     )
 
     /** A new link code: 16 characters, 80 random bits. */
@@ -62,7 +60,6 @@ object SyncCrypto {
             key = derive("key"),
             auth = Base64Text.encode(derive("auth"), url = true),
             provider = derive("provider"),
-            logins = derive("logins"),
         )
     }
 
@@ -74,12 +71,6 @@ object SyncCrypto {
 
     /** The plaintext, or null if the parcel isn't ours, was altered, or is from a newer version. */
     fun open(keys: Keys, device: String, box: ByteArray): String? = openBox(keys.key, aad(keys, device), box)
-
-    /** The opt-in logins box: sealed again, with its own key, inside the (already sealed) parcel. */
-    fun sealLogins(keys: Keys, device: String, plaintext: String, nonce: ByteArray = ByteArray(NONCE_BYTES).also(random::nextBytes)): ByteArray =
-        sealBox(keys.logins, loginsAad(keys, device), plaintext, nonce)
-
-    fun openLogins(keys: Keys, device: String, box: ByteArray): String? = openBox(keys.logins, loginsAad(keys, device), box)
 
     private fun sealBox(key: ByteArray, aad: ByteArray, plaintext: String, nonce: ByteArray): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
@@ -101,8 +92,6 @@ object SyncCrypto {
     }
 
     private fun aad(keys: Keys, device: String) = "$SALT|${keys.mailbox}|$device".toByteArray()
-
-    private fun loginsAad(keys: Keys, device: String) = "$SALT|logins|${keys.mailbox}|$device".toByteArray()
 
     private fun hmac(key: ByteArray, data: ByteArray): ByteArray =
         Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key, "HmacSHA256")) }.doFinal(data)

@@ -75,8 +75,6 @@ fun SettingsScreen(
     /** Seven presses on the version show (or hide) Sync. */
     onToggleSyncUnlocked: () -> Unit,
     onStartSync: suspend (code: String?, relay: String) -> String?,
-    shareLogins: Boolean,
-    onSetShareLogins: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
     onStopSync: () -> Unit,
     onClearProgress: () -> Unit,
@@ -207,7 +205,7 @@ fun SettingsScreen(
 
         if (syncUnlocked) {
             Section("Sync") {
-                SyncSection(sync, onStartSync, onSyncNow, onStopSync, shareLogins, onSetShareLogins)
+                SyncSection(sync, onStartSync, onSyncNow, onStopSync)
             }
         }
 
