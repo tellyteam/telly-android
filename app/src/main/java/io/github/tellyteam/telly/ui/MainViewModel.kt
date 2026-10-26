@@ -46,6 +46,7 @@ import io.github.tellyteam.telly.data.withAllowCleartext
 import io.github.tellyteam.telly.data.sync.SyncBundle
 import io.github.tellyteam.telly.data.sync.SyncConfig
 import io.github.tellyteam.telly.data.sync.SyncCrypto
+import io.github.tellyteam.telly.data.sync.SyncSettings
 import io.github.tellyteam.telly.data.sync.SyncEntry
 import io.github.tellyteam.telly.data.sync.SyncException
 import io.github.tellyteam.telly.data.sync.SyncLocal
@@ -557,12 +558,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Sync ----
 
     /** Starts a new household with a fresh code, or joins one with [code]. Returns an error message, or null. */
-    suspend fun startSync(code: String?, relay: String): String? {
+    suspend fun startSync(code: String?): String? {
         val normal = if (code == null) SyncCrypto.newCode() else SyncCrypto.normaliseCode(code)
             ?: return "That code isn't right: it's 16 letters and numbers, like ABCD-EFGH-JKMN-PQRS."
-        val address = relay.trim().trimEnd('/')
-        if (!address.startsWith("https://")) return "The relay address must start with https://"
-        val config = SyncConfig(normal, _sync.value.config?.device ?: SyncCrypto.newDeviceId(), address)
+        val config = SyncConfig(normal, _sync.value.config?.device ?: SyncCrypto.newDeviceId(), SyncSettings.RELAY)
         container.syncSettings.save(config)
         _sync.value = SyncStatus(config)
         val error = runSync(config)

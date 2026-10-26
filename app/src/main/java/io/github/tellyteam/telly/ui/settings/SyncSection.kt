@@ -25,9 +25,7 @@ import androidx.compose.ui.focus.focusRequester
 import io.github.tellyteam.telly.data.sync.SyncCrypto
 import io.github.tellyteam.telly.data.sync.SyncLink
 import io.github.tellyteam.telly.ui.components.QrCode
-import io.github.tellyteam.telly.data.sync.SyncSettings
 import io.github.tellyteam.telly.ui.SyncStatus
-import io.github.tellyteam.telly.ui.detail.ChoiceChip
 import io.github.tellyteam.telly.ui.home.PillButton
 import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TvTextField
@@ -38,15 +36,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun SyncSection(
     status: SyncStatus,
-    onStart: suspend (code: String?, relay: String) -> String?,
+    onStart: suspend (code: String?) -> String?,
     onSyncNow: () -> Unit,
     onStop: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var joining by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
-    var customRelay by remember { mutableStateOf(false) }
-    var relay by remember { mutableStateOf("https://") }
     var linking by remember { mutableStateOf(false) }
     var showCode by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -70,7 +66,7 @@ fun SyncSection(
         linking = true
         error = null
         scope.launch {
-            error = onStart(withCode, if (customRelay) relay else SyncSettings.DEFAULT_RELAY)
+            error = onStart(withCode)
             linking = false
             if (error == null) {
                 joining = false
@@ -94,7 +90,7 @@ fun SyncSection(
         status.error?.let { Text(it, fontSize = 13.sp, color = Telly.Faint) }
         if (showCode) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                QrCode(SyncLink.url(config.code, config.relay), size = 150.dp)
+                QrCode(SyncLink.url(config.code), size = 150.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(SyncCrypto.formatCode(config.code), fontSize = 26.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = Telly.Text)
                     Text(
@@ -141,13 +137,6 @@ fun SyncSection(
                 TvTextField("Code, e.g. ABCD-EFGH-JKMN-PQRS", code, KeyboardType.Ascii, modifier = Modifier.width(380.dp)) { code = it }
                 PillButton(if (linking) "Linking…" else "Link", primary = true, onClick = { if (!linking && code.isNotBlank()) link(code) })
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ChoiceChip("Use telly relay", selected = !customRelay) { customRelay = false }
-            ChoiceChip("Use custom relay", selected = customRelay) { customRelay = true }
-        }
-        if (customRelay) {
-            TvTextField("Your relay's address, e.g. https://sync.example.com", relay, KeyboardType.Uri, modifier = Modifier.width(560.dp)) { relay = it }
         }
         error?.let { Text(it, fontSize = 13.sp, color = Telly.Accent, modifier = Modifier.width(560.dp)) }
     }

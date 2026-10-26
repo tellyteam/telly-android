@@ -20,7 +20,7 @@ class SyncSettings(context: Context) {
 
     fun load(): SyncConfig? = prefs.getString(KEY, null)?.let { stored ->
         runCatching { json.decodeFromString(SyncConfig.serializer(), cipher.decrypt(stored)) }.getOrNull()
-    }?.takeIf { SyncCrypto.normaliseCode(it.code) != null && it.relay.startsWith("https://") }
+    }?.takeIf { SyncCrypto.normaliseCode(it.code) != null }?.copy(relay = RELAY)
 
     fun save(config: SyncConfig) {
         prefs.edit().putString(KEY, cipher.encrypt(json.encodeToString(SyncConfig.serializer(), config))).apply()
@@ -36,8 +36,8 @@ class SyncSettings(context: Context) {
     }
 
     companion object {
-        /** The relay telly uses unless you run your own (see telly-sync). */
-        const val DEFAULT_RELAY = "https://telly-sync.tellyteam.workers.dev"
+        /** telly's relay: sync always uses it (a link saved with another one is moved to it). */
+        const val RELAY = "https://telly-sync.tellyteam.workers.dev"
         private const val KEY = "config"
         private const val UNLOCKED = "unlocked"
         private const val SHARE_LOGINS = "shareLogins"

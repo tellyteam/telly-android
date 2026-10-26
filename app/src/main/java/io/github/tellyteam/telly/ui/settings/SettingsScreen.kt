@@ -74,7 +74,7 @@ fun SettingsScreen(
     syncUnlocked: Boolean,
     /** Seven presses on the version show (or hide) Sync. */
     onToggleSyncUnlocked: () -> Unit,
-    onStartSync: suspend (code: String?, relay: String) -> String?,
+    onStartSync: suspend (code: String?) -> String?,
     onSyncNow: () -> Unit,
     onStopSync: () -> Unit,
     onClearProgress: () -> Unit,
