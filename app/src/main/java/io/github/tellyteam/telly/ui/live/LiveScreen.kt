@@ -75,13 +75,15 @@ fun LiveScreen(
     val favouriteSet = remember(favourites) { favourites.toSet() }
     val searchFocus = remember { FocusRequester() }
 
-    // Favourites first, in the order they were added; rebuilt only when either changes.
+    // Favourites always first, even when empty, newest first (PLAYBACK.md, Lists); rebuilt only when either changes.
     val groups = remember(live, allLive, favourites) {
         val byKey = allLive.asSequence().flatMap { it.channels }.associateBy(FavouritesStore::live)
-        val favs = favourites.mapNotNull { byKey[it] }
-        if (favs.isEmpty()) live else listOf(ChannelGroup(FAVOURITES, favs)) + live
+        val favs = favourites.asReversed().mapNotNull { byKey[it] }
+        listOf(ChannelGroup(FAVOURITES, favs)) + live
     }
-    val selected = groups.firstOrNull { it.name == selectedName } ?: groups.firstOrNull()
+    // Opens on Favourites when there are some, otherwise on the first category.
+    val selected = groups.firstOrNull { it.name == selectedName }
+        ?: groups.firstOrNull { it.channels.isNotEmpty() } ?: groups.firstOrNull()
     val q = query.trim()
     val results by produceState<List<Channel>?>(null, q, live) {
         if (q.isEmpty()) {
@@ -143,6 +145,7 @@ fun LiveScreen(
                 when {
                     results != null && channels.isEmpty() -> "No channels match “$q”"
                     results != null -> "${channels.size} channels match “$q”"
+                    selected?.name == FAVOURITES && channels.isEmpty() -> "No favourites yet: hold OK or press ☰ Menu on a channel to add it"
                     else -> selected?.let { if (it.name == FAVOURITES) it.name else ChannelNames.category(it.name) }.orEmpty()
                 },
                 fontSize = 13.sp,
