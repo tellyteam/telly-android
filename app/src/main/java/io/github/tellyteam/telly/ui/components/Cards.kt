@@ -1,6 +1,7 @@
 package io.github.tellyteam.telly.ui.components
 
 import io.github.tellyteam.telly.ui.theme.FOCUS_MS
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -32,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -66,6 +68,9 @@ class FocusMemory {
 }
 
 val LocalFocusMemory = staticCompositionLocalOf { FocusMemory() }
+
+/** The watched titles' keys (`film:<id>`, `series:<id>`), for ✓ Watched on posters (PLAYBACK.md, Watched titles). */
+val LocalWatched = compositionLocalOf { emptySet<String>() }
 
 /** Records this card as the one to return to. */
 fun Modifier.rememberFocus(): Modifier = composed {
@@ -160,6 +165,10 @@ fun PosterCard(
     onFavourite: (() -> Unit)? = null,
     favourite: Boolean = false,
     progress: Float? = null,
+    /** Labelled ✓ Watched, with no progress bar. */
+    watched: Boolean = false,
+    /** In My List a watched poster is dimmed a little; the label and title stay at full strength. */
+    dimmed: Boolean = false,
 ) {
     Column(Modifier.width(118.dp)) {
         Box(
@@ -172,13 +181,15 @@ fun PosterCard(
                 .background(Telly.SurfaceHigh)
                 .mediaClick(onClick, onFavourite),
         ) {
+            val fade = if (watched && dimmed) 0.5f else 1f
             if (imageUrl != null) {
-                AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().alpha(fade))
             } else {
-                Text(title, fontSize = 13.sp, color = Telly.Text, modifier = Modifier.padding(10.dp))
+                Text(title, fontSize = 13.sp, color = Telly.Text, modifier = Modifier.padding(10.dp).alpha(fade))
             }
             if (favourite) Star(Modifier.align(Alignment.TopEnd))
-            if (progress != null) CardProgress(progress, Modifier.align(Alignment.BottomCenter))
+            if (watched) WatchedBadge(Modifier.align(Alignment.TopStart).padding(6.dp))
+            else if (progress != null) CardProgress(progress, Modifier.align(Alignment.BottomCenter))
         }
         Text(
             title,
@@ -283,6 +294,18 @@ private fun CardProgress(fraction: Float, modifier: Modifier) {
         trackColor = Color.White.copy(alpha = 0.2f),
         drawStopIndicator = {},
         modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp).height(3.dp),
+    )
+}
+
+/** "✓ Watched", on a poster or beside a page's title. */
+@Composable
+fun WatchedBadge(modifier: Modifier = Modifier) {
+    Text(
+        "✓ Watched",
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White,
+        modifier = modifier.background(Color(0xB30A0E14), Telly.SmallShape).padding(horizontal = 6.dp, vertical = 1.dp),
     )
 }
 

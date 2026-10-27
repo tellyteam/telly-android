@@ -114,6 +114,18 @@ class SyncParcelTest {
     }
 
     @Test
+    fun `the watched record round trips, merges newest-wins, and an older app removes nothing`() {
+        val own = SyncParcel(watched = mapOf("series:88" to SyncWatched(10, true, "1234"), "film:5" to SyncWatched(5, true)))
+        assertEquals(own.watched, SyncParcel.parse(own.toJson())!!.watched)
+        val other = SyncParcel(watched = mapOf("series:88" to SyncWatched(20, false), "film:6" to SyncWatched(30, true)))
+        val m = SyncParcel.merge(own, listOf(other), 100)
+        assertEquals(false, m.watched["series:88"]?.on)
+        assertEquals(setOf("series:88", "film:5", "film:6"), m.watched.keys)
+        assertEquals(own.watched, SyncParcel.merge(own, listOf(SyncParcel(at = 50)), 100).watched)
+        assertEquals(setOf("series:88"), SyncParcel.merge(own, listOf(SyncParcel(cleared = 7)), 100).watched.keys)
+    }
+
+    @Test
     fun `a clear on any device drops older progress everywhere`() {
         val m = SyncParcel.merge(
             SyncParcel(progress = mapOf("series/1.mkv" to SyncProgress(1, 9, 10), "series/2.mkv" to SyncProgress(1, 9, 40))),

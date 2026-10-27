@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import io.github.tellyteam.telly.ui.Load
 import io.github.tellyteam.telly.ui.components.MediaRow
 import io.github.tellyteam.telly.ui.components.PageInset
+import io.github.tellyteam.telly.ui.components.LocalWatched
 import io.github.tellyteam.telly.ui.components.PosterCard
 import io.github.tellyteam.telly.ui.components.SeeAllCard
 import io.github.tellyteam.telly.ui.theme.Telly
@@ -188,5 +189,6 @@ private fun <T> poster(item: T, spec: PosterSpec<T>, favouriteSet: Set<String>, 
         onFavourite = { onToggleFavourite(favKey) },
         favourite = favKey in favouriteSet,
         progress = spec.progress(item),
+        watched = favKey in LocalWatched.current,
     )
 }

@@ -33,6 +33,9 @@ data class SyncEntry(
 
 data class SyncProgress(val positionMs: Long, val durationMs: Long, val at: Long)
 
+/** Whether a title is watched, since [at]; [episode] is where a series was watched up to (empty for a film). */
+data class SyncWatched(val at: Long, val on: Boolean, val episode: String = "")
+
 /**
  * One provider's share of what a device syncs (telly-sync PROTOCOL.md): positions, history and
  * My List, by the provider's own ids. Version 1 parcels were exactly one of these; see [SyncBundle].
@@ -45,6 +48,8 @@ data class SyncParcel(
     val list: Map<String, Pair<Long, Boolean>> = emptyMap(),
     /** When watch progress was last cleared on any device (0 if never): older progress and history are dropped. */
     val cleared: Long = 0,
+    /** `film:<id>` or `series:<id>` → watched or not (PLAYBACK.md, Watched titles). */
+    val watched: Map<String, SyncWatched> = emptyMap(),
 ) {
     /** Version 1's parcel, which is a section with `v` and `at` beside it. */
     fun toJson(): String = JsonObject(mapOf("v" to JsonPrimitive(1), "at" to JsonPrimitive(at)) + sectionObject()).toString()
@@ -67,6 +72,9 @@ data class SyncParcel(
         put("list", buildJsonObject {
             list.forEach { (k, v) -> put(k, buildJsonArray { add(JsonPrimitive(v.first)); add(JsonPrimitive(v.second)) }) }
         })
+        put("watched", buildJsonObject {
+            watched.forEach { (k, v) -> put(k, buildJsonArray { add(JsonPrimitive(v.at)); add(JsonPrimitive(v.on)); add(JsonPrimitive(v.episode)) }) }
+        })
         put("cleared", cleared)
     }
 
@@ -74,6 +82,7 @@ data class SyncParcel(
         const val MAX_PROGRESS = 2000
         const val MAX_HISTORY = 40
         const val MAX_LIST = 2000
+        const val MAX_WATCHED = 2000
 
         /** Removals are shared for this long, then forgotten. */
         const val TOMBSTONE_MS = 90L * 86_400_000
@@ -130,7 +139,17 @@ data class SyncParcel(
                     put(k, at to on)
                 }
             }
-            return SyncParcel(at, progress, history, list, time(raw["cleared"]) ?: 0)
+            val watched = buildMap {
+                (raw["watched"] as? JsonObject).entries().forEach { (k, v) ->
+                    val a = v as? JsonArray ?: return@forEach
+                    if (!isSyncableKey(k) || a.size != 3) return@forEach
+                    val at = time(a[0]) ?: return@forEach
+                    val on = (a[1] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull ?: return@forEach
+                    val episode = (a[2] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@forEach
+                    if (episode.isEmpty() || isSyncableId(episode)) put(k, SyncWatched(at, on, episode))
+                }
+            }
+            return SyncParcel(at, progress, history, list, time(raw["cleared"]) ?: 0, watched)
         }
 
         /** Keeps a parcel within its limits and drops removals older than [TOMBSTONE_MS]. */
@@ -143,6 +162,8 @@ data class SyncParcel(
                 list = p.list.entries.filter { fresh(it.value.first, !it.value.second) }
                     .sortedByDescending { it.value.first }.take(MAX_LIST).associate { it.key to it.value },
                 cleared = p.cleared,
+                watched = p.watched.entries.filter { fresh(it.value.at, !it.value.on) && keptAfterClear(it.value.at, p.cleared) }
+                    .sortedByDescending { it.value.at }.take(MAX_WATCHED).associate { it.key to it.value },
             )
         }
 
@@ -150,15 +171,17 @@ data class SyncParcel(
         fun merge(own: SyncParcel, others: List<SyncParcel>, now: Long): SyncParcel {
             val progress = own.progress.toMutableMap()
             val list = own.list.toMutableMap()
+            val watched = own.watched.toMutableMap()
             val history = LinkedHashMap<String, SyncEntry>().apply { own.history.forEach { put(it.slot, it) } }
             var cleared = own.cleared
             for (p in others) {
                 cleared = maxOf(cleared, p.cleared)
                 p.progress.forEach { (k, v) -> if ((progress[k]?.at ?: -1) < v.at) progress[k] = v }
                 p.list.forEach { (k, v) -> if ((list[k]?.first ?: -1) < v.first) list[k] = v }
+                p.watched.forEach { (k, v) -> if ((watched[k]?.at ?: -1) < v.at) watched[k] = v }
                 p.history.forEach { h -> if ((history[h.slot]?.at ?: -1) < h.at) history[h.slot] = h }
             }
-            return trim(SyncParcel(now, progress, history.values.toList(), list, cleared), now)
+            return trim(SyncParcel(now, progress, history.values.toList(), list, cleared, watched), now)
         }
     }
 }

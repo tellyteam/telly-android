@@ -21,6 +21,8 @@ object SyncLocal {
         val removed: Map<String, Long>,
         /** When watch progress was last cleared, on any device (0 if never). */
         val cleared: Long = 0,
+        /** The record of watched titles, by My List key. */
+        val watched: Map<String, SyncWatched> = emptyMap(),
     )
 
     /** The shared form of a history entry; null for ones that can't be shared (no ids, or M3U URLs). */
@@ -61,7 +63,8 @@ object SyncLocal {
         local.listChanges.forEach { (k, v) -> if (SyncParcel.isSyncableKey(k) && !v.second) list[k] = v }
         local.favourites.forEach { k -> if (SyncParcel.isSyncableKey(k)) list[k] = (local.listChanges[k]?.first ?: 0L) to true }
 
-        return SyncParcel.trim(SyncParcel(now, progress, history.values.toList(), list, local.cleared), now)
+        val watched = local.watched.filterKeys(SyncParcel::isSyncableKey)
+        return SyncParcel.trim(SyncParcel(now, progress, history.values.toList(), list, local.cleared, watched), now)
     }
 
     /** This device's records after taking in [merged]. Only newer things replace local ones. */
@@ -103,6 +106,9 @@ object SyncLocal {
         // Newest first; entries from before sync (no time) keep their order after the rest.
         val history = (bySlot.values + unsynced).sortedByDescending { it.savedAt }.take(maxHistory)
 
-        return Local(progress, history, on, changes, removed, cleared)
+        val watched = local.watched.filterValues { SyncParcel.keptAfterClear(it.at, cleared) }.toMutableMap()
+        merged.watched.forEach { (k, v) -> if ((watched[k]?.at ?: -1) < v.at) watched[k] = v }
+
+        return Local(progress, history, on, changes, removed, cleared, watched)
     }
 }

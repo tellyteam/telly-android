@@ -43,6 +43,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import io.github.tellyteam.telly.data.store.FavouritesStore
+import io.github.tellyteam.telly.ui.components.WatchedBadge
+import io.github.tellyteam.telly.ui.components.LocalWatched
 import io.github.tellyteam.telly.data.Channel
 import io.github.tellyteam.telly.data.Details
 import io.github.tellyteam.telly.data.Season
@@ -108,6 +111,7 @@ fun SeriesDetailScreen(
                 },
                 inMyList = inMyList,
                 onToggleMyList = onToggleMyList,
+                watched = FavouritesStore.series(series) in LocalWatched.current,
             )
 
             when (val d = detail.data) {
@@ -178,6 +182,7 @@ fun FilmDetailScreen(
                 inMyList = inMyList,
                 onToggleMyList = onToggleMyList,
                 progress = saved?.takeIf { resumable }?.let { it.fraction to "${(it.durationMs - it.positionMs) / 60_000} min left" },
+                watched = FavouritesStore.film(film) in LocalWatched.current,
             )
             if (detail.details is Load.Loading) {
                 Box(Modifier.padding(start = PageInset, top = 24.dp)) { CircularProgressIndicator() }
@@ -205,10 +210,14 @@ private fun Header(
     inMyList: Boolean,
     onToggleMyList: () -> Unit,
     progress: Pair<Float, String>? = null,
+    watched: Boolean = false,
 ) {
     val primaryFocus = remember { FocusRequester() }
     Column(Modifier.padding(start = PageInset).width(500.dp)) {
-        Text(eyebrow.uppercase(), fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold, color = Telly.Accent)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(eyebrow.uppercase(), fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold, color = Telly.Accent)
+            if (watched) WatchedBadge()
+        }
         Text(
             title,
             fontSize = 34.sp,

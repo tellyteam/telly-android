@@ -49,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import io.github.tellyteam.telly.data.Channel
 import io.github.tellyteam.telly.data.ChannelGroup
+import io.github.tellyteam.telly.data.PlaybackRules
 import io.github.tellyteam.telly.data.Series
 import io.github.tellyteam.telly.data.SeriesGroup
 import io.github.tellyteam.telly.data.store.FavouritesStore
@@ -63,6 +64,7 @@ import io.github.tellyteam.telly.ui.components.FadedBackdrop
 import io.github.tellyteam.telly.ui.components.LandscapeCard
 import io.github.tellyteam.telly.ui.components.MediaRow
 import io.github.tellyteam.telly.ui.components.PageInset
+import io.github.tellyteam.telly.ui.components.LocalWatched
 import io.github.tellyteam.telly.ui.components.PosterCard
 import io.github.tellyteam.telly.ui.theme.Telly
 
@@ -165,6 +167,7 @@ fun HomeScreen(
     val hero = continueItems.firstOrNull()?.first ?: history.firstOrNull { it.live }
 
     var bannerFocused by rememberSaveable { mutableStateOf(false) }
+    val watched = LocalWatched.current
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
         item(key = "billboard") {
             if (hero != null) {
@@ -235,7 +238,7 @@ fun HomeScreen(
             }
         }
 
-        favouriteRows(shelves, favourites, actions, showEmpty = false)
+        favouriteRows(shelves, favourites, watched, actions, showEmpty = false)
 
         if (shelves.recentFilms.isNotEmpty()) {
             item(key = "recentFilms") {
@@ -245,6 +248,7 @@ fun HomeScreen(
                             film.name, film.logoUrl, onClick = { actions.openFilm(film) },
                             onFavourite = { actions.toggleFavourite(FavouritesStore.film(film)) },
                             favourite = FavouritesStore.film(film) in favouriteSet,
+                            watched = FavouritesStore.film(film) in LocalWatched.current,
                         )
                     }
                 }
@@ -258,6 +262,7 @@ fun HomeScreen(
                             s.name, s.coverUrl, onClick = { actions.openSeries(s) },
                             onFavourite = { actions.toggleFavourite(FavouritesStore.series(s)) },
                             favourite = FavouritesStore.series(s) in favouriteSet,
+                            watched = FavouritesStore.series(s) in LocalWatched.current,
                         )
                     }
                 }
@@ -272,6 +277,7 @@ fun HomeScreen(
                             s.name, s.coverUrl, onClick = { actions.openSeries(s) },
                             onFavourite = { actions.toggleFavourite(FavouritesStore.series(s)) },
                             favourite = FavouritesStore.series(s) in favouriteSet,
+                            watched = FavouritesStore.series(s) in LocalWatched.current,
                         )
                     }
                 }
@@ -285,6 +291,7 @@ fun HomeScreen(
                             film.name, film.logoUrl, onClick = { actions.openFilm(film) },
                             onFavourite = { actions.toggleFavourite(FavouritesStore.film(film)) },
                             favourite = FavouritesStore.film(film) in favouriteSet,
+                            watched = FavouritesStore.film(film) in LocalWatched.current,
                         )
                     }
                 }
@@ -300,6 +307,7 @@ fun MyListScreen(
     favourites: List<String>,
     actions: HomeActions,
 ) {
+    val watched = LocalWatched.current
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 22.dp, bottom = 40.dp)) {
         item(key = "title") {
             Row(Modifier.padding(start = PageInset, bottom = 14.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -307,18 +315,19 @@ fun MyListScreen(
                 Text("☰ Menu or hold OK on anything to add or remove it", fontSize = 12.sp, color = Telly.Faint)
             }
         }
-        favouriteRows(shelves, favourites, actions, showEmpty = true)
+        favouriteRows(shelves, favourites, watched, actions, showEmpty = true)
     }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.favouriteRows(
     shelves: Shelves,
     favourites: List<String>,
+    watched: Set<String>,
     actions: HomeActions,
     showEmpty: Boolean,
 ) {
-    // Most recently added first.
-    val keys = favourites.asReversed()
+    // Most recently added first, the watched after the rest (PLAYBACK.md, Watched titles).
+    val keys = PlaybackRules.myListOrder(favourites.asReversed()) { it in watched }
     val favSeries = keys.mapNotNull { shelves.seriesByKey[it] }
     val favFilms = keys.mapNotNull { shelves.filmsByKey[it] }
     val favChannels = keys.mapNotNull { shelves.channelsByKey[it] }
@@ -327,10 +336,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.favouriteRows(
         item(key = "mylist") {
             MediaRow("My List") {
                 items(favSeries, key = { "s" + it.id }) { s ->
-                    PosterCard(s.name, s.coverUrl, onClick = { actions.openSeries(s) }, onFavourite = { actions.toggleFavourite(FavouritesStore.series(s)) }, favourite = true)
+                    PosterCard(s.name, s.coverUrl, onClick = { actions.openSeries(s) }, onFavourite = { actions.toggleFavourite(FavouritesStore.series(s)) }, favourite = true, watched = FavouritesStore.series(s) in watched, dimmed = true)
                 }
                 items(favFilms, key = { "f" + it.id }) { film ->
-                    PosterCard(film.name, film.logoUrl, onClick = { actions.openFilm(film) }, onFavourite = { actions.toggleFavourite(FavouritesStore.film(film)) }, favourite = true)
+                    PosterCard(film.name, film.logoUrl, onClick = { actions.openFilm(film) }, onFavourite = { actions.toggleFavourite(FavouritesStore.film(film)) }, favourite = true, watched = FavouritesStore.film(film) in watched, dimmed = true)
                 }
             }
         }

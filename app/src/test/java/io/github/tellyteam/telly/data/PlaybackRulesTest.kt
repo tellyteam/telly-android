@@ -63,6 +63,25 @@ class PlaybackRulesTest {
     }
 
     @Test
+    fun seriesNext() = each("seriesNext") { c, name ->
+        val seasons = c.getValue("seasons").jsonArray.mapIndexed { n, ids ->
+            Season("Season ${n + 1}", ids.jsonArray.map { val id = it.jsonPrimitive.content; Channel(id, id, "", null, "http://host/series/u/p/$id.mkv") })
+        }
+        val want = c.getValue("next").let { if (it is JsonNull) null else it.jsonArray.map { i -> i.jsonPrimitive.int } }
+        assertEquals(name, want, NewEpisodes.after(seasons, c.str("episode"))?.let { (s, i) -> listOf(seasons.indexOf(s), i) })
+    }
+
+    @Test
+    fun myList() {
+        each("myList") { c, name ->
+            val watched = c.getValue("watched").jsonArray.map { it.jsonPrimitive.content }.toSet()
+            val list = c.getValue("list").jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(name, c.getValue("order").jsonArray.map { it.jsonPrimitive.content }, PlaybackRules.myListOrder(list) { it in watched })
+        }
+        each("leavesMyList") { c, name -> assertEquals(name, c.bool("leaves"), PlaybackRules.leavesMyList(c.str("kind"))) }
+    }
+
+    @Test
     fun nextPlayable() = each("nextPlayable") { c, name ->
         val downloaded = c.indexes("downloaded")
         val want = c.getValue("next").let { if (it is JsonNull) null else it.jsonPrimitive.int }

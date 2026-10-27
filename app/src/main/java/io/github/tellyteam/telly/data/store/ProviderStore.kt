@@ -132,7 +132,7 @@ class ProviderStore(context: Context) {
  */
 object Scoped {
     /** The records kept per provider. */
-    val NAMES = listOf("favourites", "watch_progress", "last_watched", "categories")
+    val NAMES = listOf("favourites", "watch_progress", "last_watched", "categories", "watched")
 
     fun name(name: String, scope: String?) = if (scope == null) name else "$name-$scope"
 

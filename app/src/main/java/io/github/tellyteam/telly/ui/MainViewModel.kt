@@ -28,6 +28,7 @@ import io.github.tellyteam.telly.data.ChannelGroup
 import io.github.tellyteam.telly.data.AccountText
 import io.github.tellyteam.telly.data.Details
 import io.github.tellyteam.telly.data.NewEpisodes
+import io.github.tellyteam.telly.data.PlaybackRules
 import io.github.tellyteam.telly.data.SeriesData
 import io.github.tellyteam.telly.data.Provider
 import io.github.tellyteam.telly.data.Season
@@ -41,6 +42,7 @@ import io.github.tellyteam.telly.data.store.ProviderStore
 import io.github.tellyteam.telly.data.store.SavedProvider
 import io.github.tellyteam.telly.data.store.Scoped
 import io.github.tellyteam.telly.data.store.WatchProgressStore
+import io.github.tellyteam.telly.data.store.WatchedStore
 import io.github.tellyteam.telly.data.syncIdentity
 import io.github.tellyteam.telly.data.withAllowCleartext
 import io.github.tellyteam.telly.data.sync.SyncBundle
@@ -50,6 +52,7 @@ import io.github.tellyteam.telly.data.sync.SyncSettings
 import io.github.tellyteam.telly.data.sync.SyncEntry
 import io.github.tellyteam.telly.data.sync.SyncException
 import io.github.tellyteam.telly.data.sync.SyncLocal
+import io.github.tellyteam.telly.data.sync.SyncWatched
 import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -492,34 +495,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Brings back series that were watched to the end of what they had, once the provider adds more:
      * the series returns to Continue watching at the next episode ("New episodes" when they arrived
      * after the user watched). Runs as the series list loads and when the player closes; each series
-     * is only fetched again after the provider has changed it.
+     * is only fetched again after the provider has changed it, or to record it as watched
+     * (PLAYBACK.md, Watched titles).
      */
     fun checkForNewEpisodes() {
         val provider = xtream() ?: return
+        recordWatchedFilms()
         val groups = (_series.value as? Load.Done)?.value ?: return
         viewModelScope.launch {
             if (!episodeCheck.tryLock()) return@launch
             try {
                 val history = container.lastWatched.history.value
                 val progress = container.watchProgress
+                val watched = container.watched
                 val candidates = history.filter { it.caughtUp(progress) }
-                if (candidates.isEmpty()) return@launch
+                // Watched series that Continue watching's short history has let go are checked too.
+                val letGo = watched.marks.value.filter { (k, m) ->
+                    m.on && k.startsWith("series:") && history.none { it.seriesId == k.removePrefix("series:") }
+                }
+                if (candidates.isEmpty() && letGo.isEmpty()) return@launch
                 val all = withContext(Dispatchers.Default) { groups.flatMap { it.series } }
                 val byId = all.associateBy { it.id }
                 val byName = all.associateBy { it.name }
                 val checks = container.newEpisodeChecks
+                suspend fun fetch(show: Series) = try {
+                    repo.seriesData(provider, show, Source.NETWORK)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
                 for (entry in candidates) {
                     val show = entry.seriesId?.let(byId::get) ?: byName[entry.heading] ?: continue
-                    if (!NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
-                    val data = try {
-                        repo.seriesData(provider, show, Source.NETWORK)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        null
-                    } ?: continue
+                    val key = FavouritesStore.series(show)
+                    val mark = watched.marks.value[key]
+                    val recorded = mark?.on == true && mark.episode == entry.current.id
+                    if (recorded && !NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
+                    val data = fetch(show) ?: continue
                     checks.mark(show.id, show.added)
-                    val (season, index) = NewEpisodes.after(data.seasons, entry.current.id) ?: continue
+                    val next = NewEpisodes.after(data.seasons, entry.current.id)
+                    if (next == null) {
+                        if (!recorded) watched.set(key, true, entry.current.id)
+                        continue
+                    }
+                    if (mark?.on == true) watched.set(key, false)
+                    val (season, index) = next
                     val fresh = NewEpisodes.isNew(show, entry.savedAt)
                     container.lastWatched.save(
                         entry.heading, live = false, season.episodes, index,
@@ -530,6 +550,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     )
                     if (fresh) Toast.makeText(getApplication(), "New episodes of ${entry.heading}", Toast.LENGTH_LONG).show()
                 }
+                for ((key, mark) in letGo) {
+                    val show = byId[key.removePrefix("series:")] ?: continue
+                    if (!NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
+                    val data = fetch(show) ?: continue
+                    checks.mark(show.id, show.added)
+                    val (season, index) = NewEpisodes.after(data.seasons, mark.episode) ?: continue
+                    watched.set(key, false)
+                    val fresh = NewEpisodes.isNew(show, mark.at)
+                    container.lastWatched.save(
+                        show.name, live = false, season.episodes, index,
+                        seriesId = show.id, newEpisodes = fresh, toFront = false, now = mark.at,
+                    )
+                    if (fresh) Toast.makeText(getApplication(), "New episodes of ${show.name}", Toast.LENGTH_LONG).show()
+                }
+                syncSoon()
             } finally {
                 episodeCheck.unlock()
             }
@@ -543,6 +578,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         syncSoon()
     }
 
+    /**
+     * Records films watched since last time, and takes them out of My List (PLAYBACK.md, Watched
+     * titles). The first time, films watched before there was a record go in without leaving it.
+     */
+    private fun recordWatchedFilms() {
+        val watched = container.watched
+        val leave = watched.seeded
+        for ((k, p) in container.watchProgress.all()) {
+            val id = WatchedStore.filmId(k) ?: continue
+            val key = "film:$id"
+            if (!p.finished || watched.marks.value[key] != null) continue
+            watched.set(key, true, now = if (leave) System.currentTimeMillis() else p.savedAt)
+            if (leave && PlaybackRules.leavesMyList("film") && key in container.favourites.keys.value) container.favourites.toggle(key)
+        }
+        watched.seeded = true
+    }
+
     fun removeFromContinue(slot: String) {
         container.lastWatched.remove(slot)
         syncSoon()
@@ -552,6 +604,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun clearProgress() {
         container.watchProgress.clear()
         container.lastWatched.clearProgress()
+        container.watched.clear()
         syncNow(force = true)
     }
 
@@ -612,8 +665,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** One provider's records, for sync: the provider in use's live ones, any other's as saved. */
-    private class Records(val id: String, val progress: WatchProgressStore, val history: LastWatchedStore, val favourites: FavouritesStore) {
-        fun local() = SyncLocal.Local(progress.all(), history.history.value, favourites.keys.value, favourites.changes, history.removed, history.cleared)
+    private class Records(val id: String, val progress: WatchProgressStore, val history: LastWatchedStore, val favourites: FavouritesStore, val watched: WatchedStore) {
+        fun local() = SyncLocal.Local(
+            progress.all(), history.history.value, favourites.keys.value, favourites.changes, history.removed, history.cleared,
+            watched.marks.value.mapValues { (_, m) -> SyncWatched(m.at, m.on, m.episode) },
+        )
     }
 
     /**
@@ -634,8 +690,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val active = _activeId.value
             val records = providers.associate { saved ->
                 SyncCrypto.providerTag(keys, saved.provider.syncIdentity) to
-                    if (saved.id == active) Records(saved.id, container.watchProgress, container.lastWatched, container.favourites)
-                    else Records(saved.id, WatchProgressStore(app, saved.id), LastWatchedStore(app, saved.id), FavouritesStore(app, saved.id))
+                    if (saved.id == active) Records(saved.id, container.watchProgress, container.lastWatched, container.favourites, container.watched)
+                    else Records(saved.id, WatchProgressStore(app, saved.id), LastWatchedStore(app, saved.id), FavouritesStore(app, saved.id), WatchedStore(app, saved.id))
             }
             val locals = records.mapValues { it.value.local() }
             // A version 1 parcel doesn't say whose it is, so it's read as this device's provider only
@@ -656,6 +712,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 r.progress.replace(next.progress)
                 r.history.replace(next.history, next.removed, next.cleared)
                 r.favourites.replace(next.favourites, next.listChanges)
+                r.watched.replace(next.watched.mapValues { (_, w) -> WatchedStore.Mark(w.at, w.on, w.episode) })
             }
             _sync.value = _sync.value.copy(busy = false, lastSyncedAt = System.currentTimeMillis())
             return null

@@ -21,6 +21,7 @@ import io.github.tellyteam.telly.data.store.ProviderStore
 import io.github.tellyteam.telly.data.store.SavedProvider
 import io.github.tellyteam.telly.data.store.Scoped
 import io.github.tellyteam.telly.data.store.WatchProgressStore
+import io.github.tellyteam.telly.data.store.WatchedStore
 import io.github.tellyteam.telly.data.sync.SyncClient
 import io.github.tellyteam.telly.data.sync.SyncSettings
 import java.io.File
@@ -55,6 +56,7 @@ class AppContainer(context: Context) {
     val watchProgress = WatchProgressStore(context, providerStore.activeId)
     val favourites = FavouritesStore(context, providerStore.activeId)
     val lastWatched = LastWatchedStore(context, providerStore.activeId)
+    val watched = WatchedStore(context, providerStore.activeId)
     val aspects = AspectStore(context)
     val guide = GuideRepository(http)
     val updates = UpdateRepository(context, http)
@@ -64,12 +66,13 @@ class AppContainer(context: Context) {
     val syncSettings = SyncSettings(context)
     val syncClient = SyncClient(http)
 
-    /** Makes [id] the provider in use: its My List, progress, history and categories. */
+    /** Makes [id] the provider in use: its My List, progress, history, watched titles and categories. */
     fun useProvider(id: String?) {
         providerStore.activeId = id
         watchProgress.use(id)
         favourites.use(id)
         lastWatched.use(id)
+        watched.use(id)
         categories.use(id)
     }
 

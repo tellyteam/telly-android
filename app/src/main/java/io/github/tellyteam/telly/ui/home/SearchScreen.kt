@@ -45,6 +45,7 @@ import io.github.tellyteam.telly.data.store.FavouritesStore
 import io.github.tellyteam.telly.ui.Load
 import io.github.tellyteam.telly.ui.components.ChannelTile
 import io.github.tellyteam.telly.ui.components.MediaRow
+import io.github.tellyteam.telly.ui.components.LocalWatched
 import io.github.tellyteam.telly.ui.components.PosterCard
 import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TvTextField
@@ -121,14 +122,14 @@ fun SearchScreen(
             if (results.series.isNotEmpty()) item(key = "series") {
                 MediaRow("Series") {
                     items(results.series, key = { it.id }) { s ->
-                        PosterCard(s.name, s.coverUrl, onClick = { actions.openSeries(s) }, onFavourite = { actions.toggleFavourite(FavouritesStore.series(s)) }, favourite = FavouritesStore.series(s) in favouriteSet)
+                        PosterCard(s.name, s.coverUrl, onClick = { actions.openSeries(s) }, onFavourite = { actions.toggleFavourite(FavouritesStore.series(s)) }, favourite = FavouritesStore.series(s) in favouriteSet, watched = FavouritesStore.series(s) in LocalWatched.current)
                     }
                 }
             }
             if (results.films.isNotEmpty()) item(key = "films") {
                 MediaRow("Films") {
                     items(results.films, key = { it.id }) { f ->
-                        PosterCard(f.name, f.logoUrl, onClick = { actions.openFilm(f) }, onFavourite = { actions.toggleFavourite(FavouritesStore.film(f)) }, favourite = FavouritesStore.film(f) in favouriteSet)
+                        PosterCard(f.name, f.logoUrl, onClick = { actions.openFilm(f) }, onFavourite = { actions.toggleFavourite(FavouritesStore.film(f)) }, favourite = FavouritesStore.film(f) in favouriteSet, watched = FavouritesStore.film(f) in LocalWatched.current)
                     }
                 }
             }

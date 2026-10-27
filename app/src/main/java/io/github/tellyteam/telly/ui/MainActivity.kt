@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +37,7 @@ import io.github.tellyteam.telly.container
 import io.github.tellyteam.telly.data.nameInSentence
 import io.github.tellyteam.telly.data.Channel
 import io.github.tellyteam.telly.data.Provider
+import io.github.tellyteam.telly.ui.components.LocalWatched
 import io.github.tellyteam.telly.ui.live.LiveScreen
 import io.github.tellyteam.telly.ui.settings.SettingsScreen
 import io.github.tellyteam.telly.data.store.LastWatchedStore
@@ -125,6 +127,8 @@ class MainActivity : ComponentActivity() {
         val updating by vm.updating.collectAsStateWithLifecycle()
         val update by vm.update.collectAsStateWithLifecycle()
         val favourites by container.favourites.keys.collectAsStateWithLifecycle()
+        val watchedMarks by container.watched.marks.collectAsStateWithLifecycle()
+        val watched = remember(watchedMarks) { watchedMarks.filterValues { it.on }.keys }
         val history by container.lastWatched.history.collectAsStateWithLifecycle()
         val progressVersion by container.watchProgress.changes.collectAsStateWithLifecycle()
         val arrangement by container.categories.state.collectAsStateWithLifecycle()
@@ -200,100 +204,103 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
 
-        AppShell(
-            destinations = destinations,
-            selected = selected,
-            onSelect = { d -> if (d == Destination.REFRESH) vm.refreshEverything() else selected = d },
-            refreshing = updating > 0,
-            updateAvailable = update is UpdateState.Available || update is UpdateState.NeedsPermission,
-            overlay = overlay,
-        ) {
-            when (selected) {
-                Destination.HOME -> HomeScreen(history, progress, progressVersion, shelves, favourites, actions)
-                Destination.SEARCH -> SearchScreen(shelves, favourites, actions)
-                Destination.MY_LIST -> MyListScreen(shelves, favourites, actions)
-                Destination.SETTINGS -> SettingsScreen(
-                    provider = s.provider,
-                    providers = providers,
-                    activeId = activeId,
-                    onSwitchProvider = vm::switchProvider,
-                    onAddProvider = { vm.openForm() },
-                    onEditProvider = { vm.openForm(it) },
-                    onRemoveProvider = { activeId?.let(vm::removeProvider) },
-                    updating = updating > 0,
-                    onClearSavedData = vm::clearSavedData,
-                    update = update,
-                    onCheckForUpdates = { vm.checkForUpdates(manual = true) },
-                    onInstallUpdate = vm::installUpdate,
-                    account = account,
-                    onLoadAccount = vm::loadAccount,
-                    categories = remember(s.live, films, series) {
-                        mapOf(
-                            CategoryKind.LIVE to s.live.map { it.name to it.channels.size },
-                            CategoryKind.SERIES to (series as? Load.Done)?.value.orEmpty().map { it.name to it.series.size },
-                            CategoryKind.FILMS to (films as? Load.Done)?.value.orEmpty().map { it.name to it.channels.size },
+        // ✓ Watched on every poster, from the record of watched titles.
+        CompositionLocalProvider(LocalWatched provides watched) {
+            AppShell(
+                destinations = destinations,
+                selected = selected,
+                onSelect = { d -> if (d == Destination.REFRESH) vm.refreshEverything() else selected = d },
+                refreshing = updating > 0,
+                updateAvailable = update is UpdateState.Available || update is UpdateState.NeedsPermission,
+                overlay = overlay,
+            ) {
+                when (selected) {
+                    Destination.HOME -> HomeScreen(history, progress, progressVersion, shelves, favourites, actions)
+                    Destination.SEARCH -> SearchScreen(shelves, favourites, actions)
+                    Destination.MY_LIST -> MyListScreen(shelves, favourites, actions)
+                    Destination.SETTINGS -> SettingsScreen(
+                        provider = s.provider,
+                        providers = providers,
+                        activeId = activeId,
+                        onSwitchProvider = vm::switchProvider,
+                        onAddProvider = { vm.openForm() },
+                        onEditProvider = { vm.openForm(it) },
+                        onRemoveProvider = { activeId?.let(vm::removeProvider) },
+                        updating = updating > 0,
+                        onClearSavedData = vm::clearSavedData,
+                        update = update,
+                        onCheckForUpdates = { vm.checkForUpdates(manual = true) },
+                        onInstallUpdate = vm::installUpdate,
+                        account = account,
+                        onLoadAccount = vm::loadAccount,
+                        categories = remember(s.live, films, series) {
+                            mapOf(
+                                CategoryKind.LIVE to s.live.map { it.name to it.channels.size },
+                                CategoryKind.SERIES to (series as? Load.Done)?.value.orEmpty().map { it.name to it.series.size },
+                                CategoryKind.FILMS to (films as? Load.Done)?.value.orEmpty().map { it.name to it.channels.size },
+                            )
+                        },
+                        categoryPrefs = arrangement,
+                        onTogglePinned = container.categories::togglePinned,
+                        onToggleHidden = container.categories::toggleHidden,
+                        onResetCategories = container.categories::reset,
+                        sync = sync,
+                        syncUnlocked = syncUnlocked,
+                        onToggleSyncUnlocked = {
+                            val shown = vm.toggleSyncUnlocked()
+                            Toast.makeText(this@MainActivity, if (shown) "Sync is now in Settings" else "Sync hidden", Toast.LENGTH_SHORT).show()
+                        },
+                        onStartSync = vm::startSync,
+                        onSyncNow = { vm.syncNow(force = true) },
+                        onStopSync = vm::stopSync,
+                        onClearProgress = {
+                            vm.clearProgress()
+                            Toast.makeText(this@MainActivity, "Watch progress cleared", Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                    Destination.SERIES -> {
+                        val groups = remember(series, arrangement) {
+                            series.map { list -> container.categories[CategoryKind.SERIES].arrange(list) { it.name }.map { it.name to it.series } }
+                        }
+                        CatalogScreen(
+                            title = "Series",
+                            groups = groups,
+                            spec = remember { PosterSpec<Series>({ it.id }, { it.name }, { it.coverUrl }, FavouritesStore::series) },
+                            favourites = favourites,
+                            updating = updating > 0,
+                            onOpen = vm::openSeries,
+                            onToggleFavourite = container.favourites::toggle,
+                            onRetry = { vm.loadSeries(force = true) },
                         )
-                    },
-                    categoryPrefs = arrangement,
-                    onTogglePinned = container.categories::togglePinned,
-                    onToggleHidden = container.categories::toggleHidden,
-                    onResetCategories = container.categories::reset,
-                    sync = sync,
-                    syncUnlocked = syncUnlocked,
-                    onToggleSyncUnlocked = {
-                        val shown = vm.toggleSyncUnlocked()
-                        Toast.makeText(this@MainActivity, if (shown) "Sync is now in Settings" else "Sync hidden", Toast.LENGTH_SHORT).show()
-                    },
-                    onStartSync = vm::startSync,
-                    onSyncNow = { vm.syncNow(force = true) },
-                    onStopSync = vm::stopSync,
-                    onClearProgress = {
-                        vm.clearProgress()
-                        Toast.makeText(this@MainActivity, "Watch progress cleared", Toast.LENGTH_SHORT).show()
-                    },
-                )
-                Destination.SERIES -> {
-                    val groups = remember(series, arrangement) {
-                        series.map { list -> container.categories[CategoryKind.SERIES].arrange(list) { it.name }.map { it.name to it.series } }
                     }
-                    CatalogScreen(
-                        title = "Series",
-                        groups = groups,
-                        spec = remember { PosterSpec<Series>({ it.id }, { it.name }, { it.coverUrl }, FavouritesStore::series) },
+                    Destination.FILMS -> {
+                        val groups = remember(films, arrangement) {
+                            films.map { list -> container.categories[CategoryKind.FILMS].arrange(list) { it.name }.map { it.name to it.channels } }
+                        }
+                        CatalogScreen(
+                            title = "Films",
+                            groups = groups,
+                            spec = PosterSpec(
+                                { it.id }, { it.name }, { it.logoUrl }, FavouritesStore::film,
+                                progress = { film -> progressVersion.let { progress.get(film.streamUrl)?.takeIf { !it.finished }?.fraction } },
+                            ),
+                            favourites = favourites,
+                            updating = updating > 0,
+                            onOpen = vm::openFilm,
+                            onToggleFavourite = container.favourites::toggle,
+                            onRetry = { vm.loadFilms(force = true) },
+                        )
+                    }
+                    else -> LiveScreen(
+                        provider = s.provider,
+                        live = remember(s.live, arrangement) { container.categories[CategoryKind.LIVE].arrange(s.live) { it.name } },
+                        allLive = s.live,
                         favourites = favourites,
                         updating = updating > 0,
-                        onOpen = vm::openSeries,
+                        onPlay = actions.playChannel,
                         onToggleFavourite = container.favourites::toggle,
-                        onRetry = { vm.loadSeries(force = true) },
                     )
                 }
-                Destination.FILMS -> {
-                    val groups = remember(films, arrangement) {
-                        films.map { list -> container.categories[CategoryKind.FILMS].arrange(list) { it.name }.map { it.name to it.channels } }
-                    }
-                    CatalogScreen(
-                        title = "Films",
-                        groups = groups,
-                        spec = PosterSpec(
-                            { it.id }, { it.name }, { it.logoUrl }, FavouritesStore::film,
-                            progress = { film -> progressVersion.let { progress.get(film.streamUrl)?.takeIf { !it.finished }?.fraction } },
-                        ),
-                        favourites = favourites,
-                        updating = updating > 0,
-                        onOpen = vm::openFilm,
-                        onToggleFavourite = container.favourites::toggle,
-                        onRetry = { vm.loadFilms(force = true) },
-                    )
-                }
-                else -> LiveScreen(
-                    provider = s.provider,
-                    live = remember(s.live, arrangement) { container.categories[CategoryKind.LIVE].arrange(s.live) { it.name } },
-                    allLive = s.live,
-                    favourites = favourites,
-                    updating = updating > 0,
-                    onPlay = actions.playChannel,
-                    onToggleFavourite = container.favourites::toggle,
-                )
             }
         }
     }

@@ -40,6 +40,13 @@ object PlaybackRules {
     fun shownInContinue(index: Int, count: Int, watched: (Int) -> Boolean): Boolean =
         !watched(continueIndex(index, count, watched))
 
+    /** My List with watched titles after the rest, each part in My List order. */
+    fun myListOrder(list: List<String>, watched: (String) -> Boolean): List<String> =
+        list.filterNot(watched) + list.filter(watched)
+
+    /** Whether a title leaves My List once watched: a film does, a series stays. */
+    fun leavesMyList(kind: String) = kind == "film"
+
     /** What plays after [index]: the next item, or offline the next downloaded one; null when nothing can. */
     fun nextPlayable(index: Int, count: Int, downloaded: (Int) -> Boolean, online: Boolean): Int? =
         ((index + 1) until count).firstOrNull { online || downloaded(it) }
