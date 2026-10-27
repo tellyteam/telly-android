@@ -1,4 +1,5 @@
-# Runs the unit tests and a debug build on every push and pull request.
+# Runs the unit tests, a debug build and an unsigned release build on every push and pull request.
+# The release build is the one R8 shrinks: its failures would otherwise first show up on a tag.
 name: CI
 
 on:
@@ -18,4 +19,4 @@ jobs:
           # Gradle's downloads and the dependencies, kept between runs in GitHub's own cache.
           cache: gradle
       - uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
-      - run: ./gradlew testDebugUnitTest assembleDebug
+      - run: ./gradlew testDebugUnitTest assembleDebug assembleRelease
