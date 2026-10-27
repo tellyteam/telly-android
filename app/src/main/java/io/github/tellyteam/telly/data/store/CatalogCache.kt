@@ -1,12 +1,15 @@
 package io.github.tellyteam.telly.data.store
 
+import java.io.BufferedReader
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.Writer
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 
 /**
- * Raw provider responses on disk, so catalogues show instantly on the next launch while a fresh
+ * Catalogues on disk: the big lists as telly keeps them ([Compact]), the smaller provider responses raw, so catalogues show instantly on the next launch while a fresh
  * copy downloads. Files are grouped per provider [scope]; a download only replaces the cached copy
  * once it has parsed successfully, so a bad response never wipes a good list.
  */
@@ -38,6 +41,36 @@ class CatalogCache(private val root: File) {
         } finally {
             tmp.delete()
         }
+    }
+
+    /** A saved catalogue read as text, or null (an unreadable one is discarded). */
+    fun <T> readCompact(scope: String, name: String, parse: (BufferedReader) -> T?): T? = read(scope, name) { parse(it.bufferedReader()) }
+
+    /**
+     * Saves what [write] produces as [name], with a fingerprint of it. When [known] (that list is
+     * already showing) and the fingerprint matches the one saved, nothing is saved and it returns
+     * false: the list hasn't changed. Comparing fingerprints means the saved copy is never read back.
+     */
+    fun keep(scope: String, name: String, known: Boolean, write: (Writer) -> Unit): Boolean {
+        val target = file(scope, name)
+        target.parentFile!!.mkdirs()
+        val tmp = File(target.parentFile, "$name.tmp")
+        val fingerprintFile = File(target.parentFile, "$name.fingerprint")
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            DigestOutputStream(tmp.outputStream().buffered(), digest).bufferedWriter().use(write)
+            val fingerprint = digest.digest().take(16).joinToString("") { "%02x".format(it) }
+            if (known && target.isFile && fingerprintFile.takeIf { it.isFile }?.readText() == fingerprint) return false
+            if (!tmp.renameTo(target)) tmp.copyTo(target, overwrite = true)
+            fingerprintFile.writeText(fingerprint)
+            return true
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    fun remove(scope: String, name: String) {
+        file(scope, name).delete()
     }
 
     /** Deletes every saved catalogue, for every provider. */

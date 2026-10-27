@@ -122,6 +122,21 @@ object XtreamParser {
             .build()
             .toString()
 
+    /**
+     * Stream addresses for one kind, quickly: everything before the file name is worked out once
+     * rather than building each of tens of thousands of addresses in full. Exactly what
+     * [streamUrl] gives (progress is kept by address).
+     */
+    class StreamUrls(private val server: HttpUrl, private val kind: String, private val username: String, private val password: String) {
+        private val prefix = streamUrl(server, kind, username, password, "x", "x").removeSuffix("x.x")
+
+        fun of(id: String, extension: String): String {
+            val file = "$id.$extension"
+            return if (id.isNotEmpty() && file.all { it.isLetterOrDigit() && it.code < 128 || it in "._~-" }) prefix + file
+            else streamUrl(server, kind, username, password, id, extension)
+        }
+    }
+
     // ---- Account ----
 
     data class Account(
@@ -168,31 +183,37 @@ object XtreamParser {
     fun liveChannels(
         server: HttpUrl, username: String, password: String, format: String,
         categories: Map<String, String>, input: InputStream,
-    ): List<Channel> = decodeList<LiveStream>(input).mapNotNull { s ->
+    ): List<Channel> {
+        val urls = StreamUrls(server, "live", username, password)
+        return decodeList<LiveStream>(input).mapNotNull { s ->
         val id = s.streamId?.ifBlank { null } ?: return@mapNotNull null
         Channel(
             id = id,
             name = s.name?.trim().orEmpty().ifEmpty { "Channel $id" },
             group = categories[s.categoryId] ?: UNCATEGORISED,
             logoUrl = s.icon?.ifBlank { null },
-            streamUrl = streamUrl(server, "live", username, password, id, format),
+            streamUrl = urls.of(id, format),
             epgId = s.epgId?.ifBlank { null },
         )
+        }
     }
 
     fun films(
         server: HttpUrl, username: String, password: String,
         categories: Map<String, String>, input: InputStream,
-    ): List<Channel> = decodeList<VodStream>(input).mapNotNull { s ->
+    ): List<Channel> {
+        val urls = StreamUrls(server, "movie", username, password)
+        return decodeList<VodStream>(input).mapNotNull { s ->
         val id = s.streamId?.ifBlank { null } ?: return@mapNotNull null
         Channel(
             id = id,
             name = s.name?.trim().orEmpty().ifEmpty { "Film $id" },
             group = categories[s.categoryId] ?: UNCATEGORISED,
             logoUrl = s.icon?.ifBlank { null },
-            streamUrl = streamUrl(server, "movie", username, password, id, s.extension?.ifBlank { null } ?: "mp4"),
+            streamUrl = urls.of(id, s.extension?.ifBlank { null } ?: "mp4"),
             added = s.added?.toLongOrNull() ?: 0L,
         )
+        }
     }
 
     fun series(categories: Map<String, String>, input: InputStream): List<Series> =

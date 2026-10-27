@@ -254,10 +254,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             refreshing {
                 try {
-                    val fresh = heavy.withLock { repo.liveGroups(provider, Source.NETWORK)!! }
+                    // Null when it's the list already showing, unchanged.
+                    val fresh = heavy.withLock { repo.liveGroups(provider, Source.NETWORK, known = cached != null) }
                     // Only remember a provider once it has actually worked.
                     if (save && id != null) remember(SavedProvider(id, provider, System.currentTimeMillis()), editing)
-                    if (gen == generation) _state.value = UiState.Ready(provider, fresh)
+                    if (fresh != null && gen == generation) _state.value = UiState.Ready(provider, fresh)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -441,9 +442,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         (_state.value as? UiState.Ready)?.let { _state.value = it.copy(provider = updated.provider) }
     }
 
-    fun loadFilms(force: Boolean = false) = loadSection(_films, force) { p, source -> repo.filmGroups(p, source) }
+    fun loadFilms(force: Boolean = false) = loadSection(_films, force) { p, source, known -> repo.filmGroups(p, source, known) }
 
-    fun loadSeries(force: Boolean = false) = loadSection(_series, force) { p, source -> repo.seriesGroups(p, source) }
+    fun loadSeries(force: Boolean = false) = loadSection(_series, force) { p, source, known -> repo.seriesGroups(p, source, known) }
 
     fun openSeries(series: Series) {
         val provider = xtream() ?: return
@@ -799,7 +800,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun <T> loadSection(
         target: MutableStateFlow<Load<T>>,
         force: Boolean,
-        block: suspend (Provider.Xtream, Source) -> T?,
+        block: suspend (Provider.Xtream, Source, Boolean) -> T?,
     ) {
         val provider = xtream() ?: return
         if (!force && (target.value is Load.Loading || target.value is Load.Done)) return
@@ -807,13 +808,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         target.value = Load.Loading
         viewModelScope.launch {
             // The saved copy first (quick), then the provider's latest after any other download.
-            val cached = savedCopies.withLock { if (gen == generation) runCatching { block(provider, Source.CACHE) }.getOrNull() else null }
+            val cached = savedCopies.withLock { if (gen == generation) runCatching { block(provider, Source.CACHE, false) }.getOrNull() else null }
             if (cached != null && gen == generation) target.value = Load.Done(cached)
             heavy.withLock {
                 if (gen != generation) return@withLock
                 refreshing {
+                    // Null (nothing to do) when it's the saved list already showing, unchanged.
                     val result = try {
-                        Load.Done(block(provider, Source.NETWORK)!!)
+                        block(provider, Source.NETWORK, cached != null)?.let { Load.Done(it) }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import io.github.tellyteam.telly.data.m3u.M3uParser
 import io.github.tellyteam.telly.data.net.fetch
 import io.github.tellyteam.telly.data.store.CatalogCache
+import io.github.tellyteam.telly.data.store.Compact
 import io.github.tellyteam.telly.data.xtream.XtreamParser
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -19,20 +20,26 @@ enum class Source { CACHE, NETWORK }
 
 /**
  * Loads catalogues from the user's provider. This is the only place provider data is fetched.
- * Every method returns null for [Source.CACHE] when nothing has been saved yet.
+ * Every method returns null for [Source.CACHE] when nothing has been saved yet. The big lists take
+ * `known` (that list is already showing): a fresh list that hasn't changed then returns null too,
+ * so screens aren't given the same list again (telly-sync PLAYBACK.md, Lists).
  */
 class ChannelRepository(private val http: OkHttpClient, private val cache: CatalogCache) {
 
-    suspend fun liveGroups(provider: Provider, source: Source): List<ChannelGroup>? = withContext(Dispatchers.IO) {
+    suspend fun liveGroups(provider: Provider, source: Source, known: Boolean = false): List<ChannelGroup>? = withContext(Dispatchers.IO) {
         val groups = when (provider) {
             is Provider.Xtream -> {
                 val x = XtreamSession(provider, source)
+                val urls = x.streamUrls("live")
+                if (source == Source.CACHE) x.saved("live") { Compact.readChannels(it, urls) }?.let { return@withContext it }
                 val format = x.format() ?: return@withContext null
                 val categories = x.categories("get_live_categories") ?: return@withContext null
-                val channels = x.list("get_live_streams") {
+                val channels = x.big("get_live_streams") {
                     XtreamParser.liveChannels(x.server, provider.username, provider.password, format, categories, it)
                 } ?: return@withContext null
-                groupInOrder(channels, categories.values.toList(), Channel::group, ::ChannelGroup)
+                val groups = groupInOrder(channels, categories.values.toList(), Channel::group, ::ChannelGroup)
+                if (source == Source.NETWORK && !x.keep("live", "get_live_streams", known) { Compact.writeChannels(groups, it) }) return@withContext null
+                groups
             }
             is Provider.M3u -> {
                 val url = provider.url.trim().toHttpUrl()
@@ -50,20 +57,27 @@ class ChannelRepository(private val http: OkHttpClient, private val cache: Catal
         groups
     }
 
-    suspend fun filmGroups(provider: Provider.Xtream, source: Source): List<ChannelGroup>? = withContext(Dispatchers.IO) {
+    suspend fun filmGroups(provider: Provider.Xtream, source: Source, known: Boolean = false): List<ChannelGroup>? = withContext(Dispatchers.IO) {
         val x = XtreamSession(provider, source)
+        val urls = x.streamUrls("movie")
+        if (source == Source.CACHE) x.saved("films") { Compact.readChannels(it, urls) }?.let { return@withContext it }
         val categories = x.categories("get_vod_categories") ?: return@withContext null
-        val films = x.list("get_vod_streams") {
+        val films = x.big("get_vod_streams") {
             XtreamParser.films(x.server, provider.username, provider.password, categories, it)
         } ?: return@withContext null
-        groupInOrder(films, categories.values.toList(), Channel::group, ::ChannelGroup)
+        val groups = groupInOrder(films, categories.values.toList(), Channel::group, ::ChannelGroup)
+        if (source == Source.NETWORK && !x.keep("films", "get_vod_streams", known) { Compact.writeChannels(groups, it) }) return@withContext null
+        groups
     }
 
-    suspend fun seriesGroups(provider: Provider.Xtream, source: Source): List<SeriesGroup>? = withContext(Dispatchers.IO) {
+    suspend fun seriesGroups(provider: Provider.Xtream, source: Source, known: Boolean = false): List<SeriesGroup>? = withContext(Dispatchers.IO) {
         val x = XtreamSession(provider, source)
+        if (source == Source.CACHE) x.saved("series") { Compact.readSeries(it) }?.let { return@withContext it }
         val categories = x.categories("get_series_categories") ?: return@withContext null
-        val series = x.list("get_series") { XtreamParser.series(categories, it) } ?: return@withContext null
-        groupInOrder(series, categories.values.toList(), Series::group, ::SeriesGroup)
+        val series = x.big("get_series") { XtreamParser.series(categories, it) } ?: return@withContext null
+        val groups = groupInOrder(series, categories.values.toList(), Series::group, ::SeriesGroup)
+        if (source == Source.NETWORK && !x.keep("series", "get_series", known) { Compact.writeSeries(groups, it) }) return@withContext null
+        groups
     }
 
     suspend fun seriesData(provider: Provider.Xtream, series: Series, source: Source): SeriesData? = withContext(Dispatchers.IO) {
@@ -116,6 +130,27 @@ class ChannelRepository(private val http: OkHttpClient, private val cache: Catal
         }
 
         fun categories(action: String): Map<String, String>? = list(action, parse = XtreamParser::categories)
+
+        fun streamUrls(kind: String) = XtreamParser.StreamUrls(server, kind, p.username, p.password)
+
+        /** A big list saved as telly keeps it ([Compact]). */
+        fun <T> saved(name: String, parse: (java.io.BufferedReader) -> T?): T? = cache.readCompact(scope, "compact-$name", parse)
+
+        /**
+         * One of the big lists, parsed straight from the provider's answer, which isn't saved; or,
+         * from the saved copies, the raw answer an earlier version kept.
+         */
+        fun <T> big(action: String, parse: (InputStream) -> T): T? = when (source) {
+            Source.CACHE -> cache.read(scope, action, parse)
+            Source.NETWORK -> fetch(apiUrl(action), parse)
+        }
+
+        /** Saves a fresh big list compactly; false if it's unchanged and [known]. */
+        fun keep(name: String, rawName: String, known: Boolean, write: (java.io.Writer) -> Unit): Boolean {
+            val changed = cache.keep(scope, "compact-$name", known, write)
+            cache.remove(scope, rawName) // the raw answer earlier versions saved
+            return changed
+        }
 
         fun <T> list(
             action: String,
