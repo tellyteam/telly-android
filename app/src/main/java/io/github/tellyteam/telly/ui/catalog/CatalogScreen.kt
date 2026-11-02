@@ -1,6 +1,7 @@
 package io.github.tellyteam.telly.ui.catalog
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,9 +27,14 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import io.github.tellyteam.telly.ui.Load
+import io.github.tellyteam.telly.ui.components.LocalFocusMemory
 import io.github.tellyteam.telly.ui.components.MediaRow
 import io.github.tellyteam.telly.ui.components.PageInset
 import io.github.tellyteam.telly.ui.components.LocalWatched
@@ -60,6 +67,7 @@ private const val ROW_LIMIT = 30
  * The Series or Films page: search (voice-capable) at the top, then My List, then one row per
  * category ending in "See all", which opens that category as a full grid.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun <T> CatalogScreen(
     title: String,
@@ -76,6 +84,10 @@ fun <T> CatalogScreen(
     BackHandler(enabled = seeAll != null) { seeAll = null }
     val favouriteSet = remember(favourites) { favourites.toSet() }
     val searchFocus = remember { FocusRequester() }
+    val gridFocus = remember { FocusRequester() }
+    val focusMemory = LocalFocusMemory.current
+    // The See all card pressed, for Back to return to.
+    var seeAllCard by remember { mutableStateOf<FocusRequester?>(null) }
     val loaded = (groups as? Load.Done)?.value.orEmpty()
 
     Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
@@ -99,24 +111,48 @@ fun <T> CatalogScreen(
                 Text(groups.message, color = Telly.Muted)
                 Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp).focusRing()) { Text("Retry") }
             }
-            is Load.Done -> when {
-                query.isNotBlank() -> {
-                    val q = query.trim()
-                    val results by produceState(emptyList<T>(), q, loaded) {
-                        delay(120)
-                        value = withContext(Dispatchers.Default) {
-                            loaded.asSequence().flatMap { it.second }.distinctBy(spec.key).filter { spec.title(it).contains(q, ignoreCase = true) }.take(200).toList()
-                        }
+            is Load.Done -> Box(Modifier.fillMaxSize()) {
+                // The rows stay alive under a grid (undrawn, and D-pad moves can't enter them), so
+                // Back finds them scrolled as they were, with the See all card to return to.
+                val covered = query.isNotBlank() || seeAll != null
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawWithContent { if (!covered) drawContent() }
+                        .focusProperties { enter = { if (covered) FocusRequester.Cancel else FocusRequester.Default } }
+                        .focusGroup(),
+                ) {
+                    Rows(loaded, spec, favourites, favouriteSet, onOpen, onToggleFavourite) {
+                        seeAllCard = focusMemory.last
+                        seeAll = it
                     }
-                    Grid(if (results.isEmpty()) "No matches for “$q”" else "${results.size} matches", results, spec, favouriteSet, onOpen, onToggleFavourite)
                 }
-                seeAll != null -> {
-                    val items = loaded.firstOrNull { it.first == seeAll }?.second.orEmpty()
-                    Grid("${items.size} titles · Back to return", items, spec, favouriteSet, onOpen, onToggleFavourite)
+                when {
+                    query.isNotBlank() -> {
+                        val q = query.trim()
+                        val results by produceState(emptyList<T>(), q, loaded) {
+                            delay(120)
+                            value = withContext(Dispatchers.Default) {
+                                loaded.asSequence().flatMap { it.second }.distinctBy(spec.key).filter { spec.title(it).contains(q, ignoreCase = true) }.take(200).toList()
+                            }
+                        }
+                        Grid(if (results.isEmpty()) "No matches for “$q”" else "${results.size} matches", results, spec, favouriteSet, onOpen, onToggleFavourite)
+                    }
+                    seeAll != null -> {
+                        val items = loaded.firstOrNull { it.first == seeAll }?.second.orEmpty()
+                        Grid("${items.size} titles · Back to return", items, spec, favouriteSet, onOpen, onToggleFavourite, gridFocus)
+                    }
                 }
-                else -> Rows(loaded, spec, favourites, favouriteSet, onOpen, onToggleFavourite) { seeAll = it }
             }
         }
+    }
+    // Opening See all puts focus on the grid's first title, and Back puts it on the See all card
+    // again, rather than focus falling to the menu when the card it was on goes.
+    LaunchedEffect(seeAll) {
+        // Once the grid (or the rows again) has been laid out.
+        repeat(2) { withFrameNanos { } }
+        if (seeAll != null) runCatching { gridFocus.requestFocus() }
+        else seeAllCard?.let { runCatching { it.requestFocus() } }
     }
     // Search is the first thing focused, so typing or speaking is one press away.
     LaunchedEffect(Unit) { runCatching { searchFocus.requestFocus() } }
@@ -164,6 +200,7 @@ private fun <T> Grid(
     favouriteSet: Set<String>,
     onOpen: (T) -> Unit,
     onToggleFavourite: (String) -> Unit,
+    focus: FocusRequester? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
         Text(caption, fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.padding(start = PageInset, top = 12.dp))
@@ -172,7 +209,8 @@ private fun <T> Grid(
             contentPadding = PaddingValues(start = PageInset, end = 40.dp, top = 14.dp, bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxSize(),
+            // Asked for focus, the grid gives it to its first title.
+            modifier = Modifier.fillMaxSize().then(if (focus != null) Modifier.focusRequester(focus).focusGroup() else Modifier),
         ) {
             items(items, key = spec.key) { poster(it, spec, favouriteSet, onOpen, onToggleFavourite) }
         }
