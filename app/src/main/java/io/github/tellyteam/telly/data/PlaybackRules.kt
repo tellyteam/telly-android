@@ -13,6 +13,12 @@ object PlaybackRules {
     /** Earlier than this, an item starts from the beginning. */
     const val MIN_RESUME_MS = 15_000L
 
+    /** Played for less than this, a film or episode leaves Continue watching as it was (an accidental press, say). */
+    const val MIN_PLAY_MS = 30_000L
+
+    /** Whether what's playing now counts for Continue watching: live TV at once, anything else after 30 s played. */
+    fun recordsWatching(playedMs: Long, live: Boolean): Boolean = live || playedMs >= MIN_PLAY_MS
+
     /** Seconds the next-episode prompt shows, or null when it doesn't. */
     fun promptSeconds(durationMs: Long, positionMs: Long, hasNext: Boolean, autoNext: Boolean, dismissed: Boolean, live: Boolean): Int? {
         if (live || !hasNext || !autoNext || dismissed || durationMs <= 0) return null

@@ -55,6 +55,7 @@ import io.github.tellyteam.telly.data.store.WatchProgressStore
 import io.github.tellyteam.telly.ui.FilmDetail
 import io.github.tellyteam.telly.ui.Load
 import io.github.tellyteam.telly.ui.SeriesDetail
+import io.github.tellyteam.telly.ui.components.Artwork
 import io.github.tellyteam.telly.ui.components.FadedBackdrop
 import io.github.tellyteam.telly.ui.components.PageInset
 import io.github.tellyteam.telly.ui.components.SmoothRowScrolling
@@ -146,7 +147,7 @@ fun SeriesDetailScreen(
                     ) {
                         itemsIndexed(shownSeason.episodes, key = { _, e -> e.id }) { i, episode ->
                             val saved = progressVersion.let { progress.get(episode.streamUrl) }
-                            EpisodeCard(episode, saved) { onPlayEpisode(series, shownSeason, i) }
+                            EpisodeCard(episode, saved, series.coverUrl) { onPlayEpisode(series, shownSeason, i) }
                         }
                     }
                 }
@@ -274,7 +275,7 @@ fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EpisodeCard(episode: Channel, saved: WatchProgressStore.Progress?, onClick: () -> Unit) {
+private fun EpisodeCard(episode: Channel, saved: WatchProgressStore.Progress?, cover: String?, onClick: () -> Unit) {
     Column(Modifier.width(208.dp)) {
         Box(
             Modifier
@@ -285,9 +286,8 @@ private fun EpisodeCard(episode: Channel, saved: WatchProgressStore.Progress?, o
                 .background(Telly.SurfaceHigh)
                 .clickable(onClick = onClick),
         ) {
-            if (episode.logoUrl != null) {
-                AsyncImage(model = episode.logoUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            }
+            // A new episode's still is often missing or empty for a few hours: the series' poster instead.
+            Artwork(episode.logoUrl, cover, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0x990A0E14))))
             if (saved?.finished == true) {
                 Box(

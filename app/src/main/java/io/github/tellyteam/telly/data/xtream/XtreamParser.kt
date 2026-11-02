@@ -81,6 +81,8 @@ object XtreamParser {
         @SerialName("episode_num") val number: String? = null,
         val season: String? = null,
         @SerialName("container_extension") val extension: String? = null,
+        /** When the provider added it (epoch seconds). */
+        val added: String? = null,
         /** Usually an object, but some panels send `[]` when empty. */
         val info: JsonElement? = null,
     ) {
@@ -254,6 +256,7 @@ object XtreamParser {
                     group = "Season $seasonName",
                     logoUrl = e.image?.ifBlank { null },
                     streamUrl = streamUrl(server, "series", username, password, id, e.extension?.ifBlank { null } ?: "mp4"),
+                    added = e.added?.toLongOrNull() ?: 0L,
                 )
             }
             if (channels.isEmpty()) null else Season("Season $seasonName", channels)

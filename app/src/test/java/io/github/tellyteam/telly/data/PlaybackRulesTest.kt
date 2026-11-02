@@ -84,6 +84,18 @@ class PlaybackRulesTest {
     }
 
     @Test
+    fun newEpisodesBadge() = each("newEpisodesBadge") { c, name ->
+        val n = { k: String -> c.getValue(k).jsonPrimitive.long }
+        assertEquals(name, c.getValue("isNew").jsonPrimitive.boolean, NewEpisodes.isNew(n("episodeAdded"), n("seriesAdded"), n("watchedAtMs")))
+    }
+
+    @Test
+    fun continueRecord() = each("continueRecord") { c, name ->
+        assertEquals(name, c.getValue("records").jsonPrimitive.boolean,
+            PlaybackRules.recordsWatching(c.getValue("playedMs").jsonPrimitive.long, c.getValue("live").jsonPrimitive.boolean))
+    }
+
+    @Test
     fun myList() {
         each("myList") { c, name ->
             val watched = c.getValue("watched").jsonArray.map { it.jsonPrimitive.content }.toSet()

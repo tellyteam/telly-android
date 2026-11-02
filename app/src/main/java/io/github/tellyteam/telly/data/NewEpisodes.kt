@@ -46,10 +46,13 @@ object NewEpisodes {
 
     /**
      * Whether what comes next arrived after the user watched (so it's "new", not a season that was
-     * already there). Older history has no save time, so it never claims "new".
+     * already there): by the episode's own added time, or the series' when the provider doesn't give
+     * it (epoch seconds). Older history has no save time, so it never claims "new".
      */
-    fun isNew(series: Series, watchedAtMs: Long): Boolean =
-        watchedAtMs > 0 && series.added > 0 && series.added * 1000 > watchedAtMs
+    fun isNew(episodeAdded: Long, seriesAdded: Long, watchedAtMs: Long): Boolean {
+        val added = if (episodeAdded > 0) episodeAdded else seriesAdded
+        return watchedAtMs > 0 && added > 0 && added * 1000 > watchedAtMs
+    }
 
     data class Check(val added: Long, val atMs: Long)
 

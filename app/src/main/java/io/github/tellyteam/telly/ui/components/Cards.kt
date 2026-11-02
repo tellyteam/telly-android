@@ -31,6 +31,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.compositionLocalOf
@@ -210,6 +213,8 @@ fun LandscapeCard(
     onClick: () -> Unit,
     badge: String? = null,
     progress: Float? = null,
+    /** Shown when [imageUrl] gives no picture. */
+    fallbackUrl: String? = null,
     /** The remote's Menu button, or holding OK. */
     onMenu: (() -> Unit)? = null,
 ) {
@@ -224,9 +229,7 @@ fun LandscapeCard(
                 .background(Telly.SurfaceHigh)
                 .mediaClick(onClick, onMenu),
         ) {
-            if (imageUrl != null) {
-                AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            }
+            Artwork(imageUrl, fallbackUrl, Modifier.fillMaxSize())
             // Keeps the badge and title readable over any artwork.
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color(0xCC0A0E14))))
             if (badge != null) {
@@ -344,6 +347,22 @@ fun FadedBackdrop(url: String?, modifier: Modifier) {
             },
     ) {
         AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
+}
+
+/**
+ * A picture, or [fallback] when it's missing, empty or broken: a new episode's still often is for
+ * a few hours, and the series' poster is better than a blank tile.
+ */
+@Composable
+fun Artwork(url: String?, fallback: String?, modifier: Modifier = Modifier) {
+    var failed by remember(url, fallback) { mutableStateOf(url == null) }
+    val shown = if (failed) fallback else url
+    if (shown != null) {
+        AsyncImage(
+            model = shown, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier,
+            onError = { if (!failed) failed = true },
+        )
     }
 }
 

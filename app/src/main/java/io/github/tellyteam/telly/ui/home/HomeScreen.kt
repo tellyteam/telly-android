@@ -223,6 +223,7 @@ fun HomeScreen(
                             title = if (entry.isFilm) item.name else entry.heading,
                             subtitle = if (entry.isFilm) "Film" else item.name,
                             imageUrl = item.logoUrl,
+                            fallbackUrl = if (entry.isFilm) null else shelves.seriesByName[entry.heading]?.coverUrl,
                             badge = when {
                                 entry.isFilm -> "Film"
                                 entry.newEpisodes -> "New episodes"

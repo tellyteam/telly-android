@@ -41,9 +41,11 @@ class NewEpisodesTest {
     @Test
     fun `only episodes added after watching are new`() {
         val show = Series("9", "Ted Lasso", "Comedy", null, null, added = 1_750_000_000)
-        assertTrue(NewEpisodes.isNew(show, watchedAtMs = 1_700_000_000_000))
-        assertFalse(NewEpisodes.isNew(show, watchedAtMs = 1_760_000_000_000))
-        assertFalse(NewEpisodes.isNew(show, watchedAtMs = 0)) // older history: no save time
+        assertTrue(NewEpisodes.isNew(0, show.added, watchedAtMs = 1_700_000_000_000))
+        assertFalse(NewEpisodes.isNew(0, show.added, watchedAtMs = 1_760_000_000_000))
+        assertFalse(NewEpisodes.isNew(0, show.added, watchedAtMs = 0)) // older history: no save time
+        // The episode's own time wins over a list that lags.
+        assertTrue(NewEpisodes.isNew(1_770_000_000, show.added, watchedAtMs = 1_760_000_000_000))
     }
 
     @Test

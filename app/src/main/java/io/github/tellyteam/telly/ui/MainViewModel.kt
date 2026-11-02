@@ -173,6 +173,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var checkQueued = false
     private var checkNextAll = false
     private val checkNextSeries = mutableSetOf<String>()
+    /** Episodes a series' page has just fetched, for its check to use instead of fetching again. */
+    private val fetchedByPage = mutableMapOf<String, SeriesData>()
+
+    private fun seriesPageFetched(series: Series, data: SeriesData) {
+        fetchedByPage[series.id] = data
+        checkForNewEpisodes(setOf(series.id))
+    }
 
     private val _sync = MutableStateFlow(SyncStatus(container.syncSettings.load()))
     val sync: StateFlow<SyncStatus> = _sync
@@ -458,6 +465,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             network = { repo.seriesData(provider, series, Source.NETWORK) },
             // Ignore results if the user has since opened something else or gone back.
             publish = { data -> if (_seriesDetail.value?.series == series) _seriesDetail.value = SeriesDetail(series, data) },
+            // Continue watching and the watched record follow what the page fetched, straight away.
+            fetched = { data -> seriesPageFetched(series, data) },
         )
     }
 
@@ -477,7 +486,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Shows the saved copy at once (if any), then the provider's latest. */
-    private fun <T> loadDetail(cache: suspend () -> T?, network: suspend () -> T?, publish: (Load<T>) -> Unit) {
+    private fun <T> loadDetail(cache: suspend () -> T?, network: suspend () -> T?, publish: (Load<T>) -> Unit, fetched: (T) -> Unit = {}) {
         val gen = generation
         viewModelScope.launch {
             val cached = runCatching { cache() }.getOrNull()
@@ -485,7 +494,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshing {
                 try {
                     val fresh = network()!!
-                    if (gen == generation) publish(Load.Done(fresh))
+                    if (gen == generation) {
+                        publish(Load.Done(fresh))
+                        fetched(fresh)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -559,8 +571,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val key = FavouritesStore.series(show)
             val mark = watched.marks.value[key]
             val recorded = mark?.on == true && mark.episode == entry.current.id
-            if (recorded && !NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
-            val data = fetch(show) ?: continue
+            // What the series' page fetched is used whether due or not: it costs nothing.
+            val page = fetchedByPage.remove(show.id)
+            if (page == null && recorded && !NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
+            val data = page ?: fetch(show) ?: continue
             checks.mark(show.id, show.added)
             val (next, upTo) = NewEpisodes.afterWatched(data.seasons, entry.current.id, done)
             if (next == null) {
@@ -576,7 +590,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (mark?.on == true) watched.set(key, false)
             val (season, index) = next
-            val fresh = NewEpisodes.isNew(show, entry.savedAt)
+            val fresh = NewEpisodes.isNew(season.episodes[index].added, show.added, entry.savedAt)
             container.lastWatched.save(
                 entry.heading, live = false, season.episodes, index,
                 // Never moved to the front: Continue watching leads with what you last watched.
@@ -588,8 +602,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         for ((key, mark) in letGo) {
             val show = byId[key.removePrefix("series:")] ?: continue
-            if (!NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
-            val data = fetch(show) ?: continue
+            val page = fetchedByPage.remove(show.id)
+            if (page == null && !NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
+            val data = page ?: fetch(show) ?: continue
             checks.mark(show.id, show.added)
             val (next, upTo) = NewEpisodes.afterWatched(data.seasons, mark.episode, done)
             if (next == null) {
@@ -598,7 +613,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             val (season, index) = next
             watched.set(key, false)
-            val fresh = NewEpisodes.isNew(show, mark.at)
+            val fresh = NewEpisodes.isNew(season.episodes[index].added, show.added, mark.at)
             container.lastWatched.save(
                 show.name, live = false, season.episodes, index,
                 seriesId = show.id, newEpisodes = fresh, toFront = false, now = mark.at,

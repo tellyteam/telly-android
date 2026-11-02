@@ -79,6 +79,9 @@ class PlayerActivity : ComponentActivity() {
     private var promptDismissed = false
     private val playbackSettings by lazy { PlaybackSettings(this) }
 
+    /** Time this item has played (ms), and whether Continue watching has it yet (PLAYBACK.md). */
+    private var playedMs = 0L
+    private var recorded = false
     private var lastPositionMs = 0L
     private var lastDurationMs = C.TIME_UNSET
 
@@ -346,8 +349,18 @@ class PlayerActivity : ComponentActivity() {
         ui.nextPromptSecs = null
         promptDismissed = false
         updateAutoAdvance()
-        container.lastWatched.save(heading, live, items, index, seriesId)
+        // Live TV counts straight away; anything else once it has played for 30 s (the tick).
+        playedMs = 0
+        recorded = false
+        recordIfLongEnough()
         loadAspect()
+    }
+
+    /** Continue watching follows what's playing once it counts: a brief or accidental play leaves it as it was. */
+    private fun recordIfLongEnough() {
+        if (recorded || !PlaybackRules.recordsWatching(playedMs, live)) return
+        recorded = true
+        container.lastWatched.save(heading, live, items, index, seriesId)
     }
 
     /** Plays on into the next item only as PLAYBACK.md says; otherwise stops on this one's last frame. */
@@ -386,6 +399,9 @@ class PlayerActivity : ComponentActivity() {
                     lastDurationMs = p.duration
                 }
                 if (ui.overlay) refreshPosition()
+                // Time actually playing: paused, buffering or seeking doesn't count.
+                if (p.isPlaying) playedMs += 500
+                recordIfLongEnough()
                 ui.nextPromptSecs = if (p.duration == C.TIME_UNSET || p.playbackState != Player.STATE_READY) null else PlaybackRules.promptSeconds(
                     p.duration, p.currentPosition, p.hasNextMediaItem(), playbackSettings.autoNext, promptDismissed, live,
                 )
