@@ -60,6 +60,7 @@ class SyncClient(private val http: OkHttpClient) {
         response.use {
             when {
                 it.code == 401 -> throw SyncException("This sync code is no longer valid on the relay.")
+                it.code == 402 -> throw SyncException("Sync needs telly Plus for this household. It can be bought on an iPhone, iPad or Mac linked to it.")
                 it.code == 409 -> throw SyncException("Too many devices are linked to this code (12 at most).")
                 !it.isSuccessful -> throw SyncException("The sync relay answered ${it.code}.")
             }
