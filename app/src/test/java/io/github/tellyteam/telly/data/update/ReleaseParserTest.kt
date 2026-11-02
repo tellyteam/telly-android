@@ -58,3 +58,13 @@ class ReleaseParserTest {
         assertNull(ReleaseParser.cleanNotes("**Full Changelog**: https://x"))
     }
 }
+
+class UpdateRulesTest {
+    @Test
+    fun `looked for at most daily`() {
+        val now = 1_800_000_000_000L
+        assertTrue(UpdateRules.due(0, now))
+        assertFalse(UpdateRules.due(now - UpdateRules.DAY_MS + 1, now))
+        assertTrue(UpdateRules.due(now - UpdateRules.DAY_MS, now))
+    }
+}

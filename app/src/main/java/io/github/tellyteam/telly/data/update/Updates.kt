@@ -72,7 +72,7 @@ object ReleaseParser {
 }
 
 /**
- * Asks GitHub for the latest telly release (at most weekly unless the user asks) and downloads it.
+ * Asks GitHub for the latest telly release (at most daily unless the user asks) and downloads it.
  * Installing is left to Android's own installer, which asks the user and only accepts an update
  * signed with the same key as the installed app.
  */
@@ -81,7 +81,17 @@ class UpdateRepository(private val context: Context, private val http: OkHttpCli
 
     val lastCheckedMs: Long get() = prefs.getLong(KEY_LAST_CHECK, 0)
 
-    fun dueForCheck(nowMs: Long = System.currentTimeMillis()): Boolean = nowMs - lastCheckedMs >= WEEK_MS
+    fun dueForCheck(nowMs: Long = System.currentTimeMillis()): Boolean = UpdateRules.due(lastCheckedMs, nowMs)
+
+    /**
+     * Whether a newly found [version] should be announced: once per version, so the daily check
+     * doesn't say the same thing every day. Settings keeps showing it either way.
+     */
+    fun announce(version: String): Boolean {
+        if (prefs.getString(KEY_ANNOUNCED, null) == version) return false
+        prefs.edit().putString(KEY_ANNOUNCED, version).apply()
+        return true
+    }
 
     suspend fun latest(): Release? = withContext(Dispatchers.IO) {
         val release = http.fetch(LATEST_URL.toHttpUrl()).use { r -> ReleaseParser.parse(Json.parseToJsonElement(r.body!!.string())) }
@@ -117,6 +127,14 @@ class UpdateRepository(private val context: Context, private val http: OkHttpCli
     private companion object {
         const val LATEST_URL = "https://api.github.com/repos/tellyteam/telly-android/releases/latest"
         const val KEY_LAST_CHECK = "lastCheck"
-        const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
+        const val KEY_ANNOUNCED = "announced"
     }
+}
+
+/** When to look for a new release without being asked; no Android code, so it's unit-tested. */
+object UpdateRules {
+    const val DAY_MS = 24L * 60 * 60 * 1000
+
+    /** At most daily: a TV can keep telly running for days, so this is checked each time it comes to the front. */
+    fun due(lastCheckedMs: Long, nowMs: Long): Boolean = nowMs - lastCheckedMs >= DAY_MS
 }

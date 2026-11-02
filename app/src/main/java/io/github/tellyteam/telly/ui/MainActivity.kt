@@ -76,6 +76,8 @@ class MainActivity : ComponentActivity() {
                     // episodes, or have been watched on another device.
                     LifecycleResumeEffect(vm) {
                         vm.syncThenCheck()
+                        // A TV can keep telly running for days: a new release is looked for here too.
+                        vm.checkForUpdatesIfDue()
                         onPauseOrDispose {}
                     }
                     when (val s = state) {

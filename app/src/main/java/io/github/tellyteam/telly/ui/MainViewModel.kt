@@ -192,8 +192,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var syncSoonJob: Job? = null
 
     init {
-        // Weekly, quietly: only says anything if there is a newer version.
-        if (container.updates.dueForCheck()) checkForUpdates(manual = false)
         viewModelScope.launch {
             _series.collect {
                 if (it !is Load.Done) return@collect
@@ -316,15 +314,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.IO) { loader.diskCache?.clear() }
     }
 
+    private var updateCheck: Job? = null
+
+    /**
+     * Each time telly comes to the front (starting included), daily at most, quietly: only says
+     * anything if there is a newer version, and once per version.
+     */
+    fun checkForUpdatesIfDue() {
+        if (updateCheck?.isActive != true && container.updates.dueForCheck()) checkForUpdates(manual = false)
+    }
+
     fun checkForUpdates(manual: Boolean = true) {
         if (_update.value is UpdateState.Checking || _update.value is UpdateState.Downloading) return
         if (manual) _update.value = UpdateState.Checking
-        viewModelScope.launch {
+        updateCheck = viewModelScope.launch {
             _update.value = try {
                 val latest = container.updates.latest()
                 when {
                     latest != null && ReleaseParser.isNewer(latest.version, BuildConfig.VERSION_NAME) -> {
-                        if (!manual) {
+                        if (!manual && container.updates.announce(latest.version)) {
                             Toast.makeText(getApplication(), "telly ${latest.version} is available. Go to Settings to update.", Toast.LENGTH_LONG).show()
                         }
                         UpdateState.Available(latest)
