@@ -210,6 +210,24 @@ class SyncLocalTest {
 }
 
 /** Version 2: a section per provider. The vectors are PROTOCOL.md's, as the Apple and LG apps pin them. */
+class SyncChangedTest {
+    private fun item(id: String) = Item(id, "E$id", "Season 1", null, "http://host/series/user/secret/$id.mkv")
+    private fun local(progress: Map<String, Progress>, history: List<LastWatched>, watched: Map<String, SyncWatched>) =
+        SyncLocal.Local(progress, history, emptyList(), emptyMap(), emptyMap(), watched = watched)
+
+    /** After a sync, only series whose entry, episode progress or watched record changed are checked again. */
+    @Test
+    fun `only series a sync changed are checked`() {
+        val a = LastWatched("A", false, 0, listOf(item("1"), item("2")), seriesId = "a", savedAt = 1)
+        val b = LastWatched("B", false, 0, listOf(item("3")), seriesId = "b", savedAt = 1)
+        val c = LastWatched("C", false, 0, listOf(item("4")), seriesId = "c", savedAt = 1)
+        val old = local(mapOf("series/2.mkv" to Progress(1, 10, 1)), listOf(a, b, c), mapOf("series:d" to SyncWatched(1, false)))
+        val new = local(mapOf("series/2.mkv" to Progress(9, 10, 2)), listOf(a, b, c.copy(savedAt = 2)), mapOf("series:d" to SyncWatched(2, true, "9")))
+        assertEquals(setOf("a", "c", "d"), SyncLocal.seriesChanged(old, new))
+        assertEquals(emptySet<String>(), SyncLocal.seriesChanged(new, new))
+    }
+}
+
 class SyncBundleTest {
     private val keys = SyncCrypto.deriveKeys("0123456789ABCDEF")
 

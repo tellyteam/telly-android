@@ -1,6 +1,7 @@
 package io.github.tellyteam.telly.data.sync
 
 import io.github.tellyteam.telly.data.store.LastWatchedStore.LastWatched
+import io.github.tellyteam.telly.data.store.WatchProgressStore
 import io.github.tellyteam.telly.data.store.WatchProgressStore.Progress
 
 /**
@@ -24,6 +25,23 @@ object SyncLocal {
         /** The record of watched titles, by My List key. */
         val watched: Map<String, SyncWatched> = emptyMap(),
     )
+
+    /**
+     * The series a sync changed something of: their Continue watching entry, progress on one of its
+     * episodes, or their watched record. Only these need the episode check after it.
+     */
+    fun seriesChanged(old: Local, new: Local): Set<String> {
+        val ids = mutableSetOf<String>()
+        val before = old.history.associateBy { it.slot }
+        for (h in new.history) {
+            val sid = h.seriesId ?: continue
+            if (h.live || h.isFilm) continue
+            val progressChanged = h.items.any { val k = WatchProgressStore.key(it.streamUrl); new.progress[k] != old.progress[k] }
+            if (before[h.slot] != h || progressChanged) ids += sid
+        }
+        new.watched.forEach { (k, v) -> if (k.startsWith("series:") && old.watched[k] != v) ids += k.removePrefix("series:") }
+        return ids
+    }
 
     /** The shared form of a history entry; null for ones that can't be shared (no ids, or M3U URLs). */
     fun entryOf(h: LastWatched): SyncEntry? {

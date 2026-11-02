@@ -30,6 +30,8 @@ class NewEpisodesTest {
         assertTrue(NewEpisodes.due(show, null, now))
         assertFalse(NewEpisodes.due(show, NewEpisodes.Check(1_700_000_000, now), now))
         assertTrue(NewEpisodes.due(show.copy(added = 1_750_000_000), NewEpisodes.Check(1_700_000_000, now), now))
+        // Daily even when the list says nothing changed: a provider's list can lag behind its series.
+        assertTrue(NewEpisodes.due(show, NewEpisodes.Check(1_700_000_000, now), now + 24L * 60 * 60 * 1000))
         // No change stamp from the provider: once a day.
         val unstamped = show.copy(added = 0)
         assertFalse(NewEpisodes.due(unstamped, NewEpisodes.Check(0, now), now + 60_000))

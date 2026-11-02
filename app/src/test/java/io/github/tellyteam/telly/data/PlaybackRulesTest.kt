@@ -72,6 +72,18 @@ class PlaybackRulesTest {
     }
 
     @Test
+    fun seriesNextWatched() = each("seriesNextWatched") { c, name ->
+        val seasons = c.getValue("seasons").jsonArray.mapIndexed { n, ids ->
+            Season("Season ${n + 1}", ids.jsonArray.map { val id = it.jsonPrimitive.content; Channel(id, id, "", null, "http://host/series/u/p/$id.mkv") })
+        }
+        val watched = c.getValue("watched").jsonArray.map { it.jsonPrimitive.content }.toSet()
+        val want = c.getValue("next").let { if (it is JsonNull) null else it.jsonArray.map { i -> i.jsonPrimitive.int } }
+        val (next, upTo) = NewEpisodes.afterWatched(seasons, c.str("episode")) { it.id in watched }
+        assertEquals(name, want, next?.let { (s, i) -> listOf(seasons.indexOf(s), i) })
+        assertEquals(name, c.str("upTo"), upTo)
+    }
+
+    @Test
     fun myList() {
         each("myList") { c, name ->
             val watched = c.getValue("watched").jsonArray.map { it.jsonPrimitive.content }.toSet()

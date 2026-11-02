@@ -72,10 +72,10 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val vm: MainViewModel = viewModel()
                     val state by vm.state.collectAsStateWithLifecycle()
-                    // Back from the player (or the TV waking up): a finished series may have new episodes.
+                    // Back from the player (or the TV waking up): a finished series may have new
+                    // episodes, or have been watched on another device.
                     LifecycleResumeEffect(vm) {
-                        vm.checkForNewEpisodes()
-                        vm.syncNow()
+                        vm.syncThenCheck()
                         onPauseOrDispose {}
                     }
                     when (val s = state) {

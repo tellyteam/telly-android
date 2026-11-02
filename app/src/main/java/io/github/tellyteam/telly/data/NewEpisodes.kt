@@ -20,15 +20,29 @@ object NewEpisodes {
     }
 
     /**
-     * Whether a series needs its episode list fetched again. Providers stamp a series when it
-     * changes ([Series.added], epoch seconds), so it's only re-fetched after that moves; providers
-     * that don't stamp it are looked at once a day.
+     * Like [after], past episodes already watched (on another device, say): where watching
+     * continues, or null when everything after [watchedId] is watched too. [Next.upTo] is the last
+     * of those watched in a row from [watchedId], what the series is then watched up to.
      */
-    fun due(series: Series, checked: Check?, nowMs: Long): Boolean = when {
-        checked == null -> true
-        series.added > 0 -> series.added != checked.added
-        else -> nowMs - checked.atMs >= DAY_MS
+    fun afterWatched(seasons: List<Season>, watchedId: String, watched: (Channel) -> Boolean): Next {
+        var upTo = watchedId
+        while (true) {
+            val (season, i) = after(seasons, upTo) ?: return Next(null, upTo)
+            val episode = season.episodes[i]
+            if (!watched(episode)) return Next(season to i, upTo)
+            upTo = episode.id
+        }
     }
+
+    data class Next(val next: Pair<Season, Int>?, val upTo: String)
+
+    /**
+     * Whether a series needs its episode list fetched again. Providers stamp a series when it
+     * changes ([Series.added], epoch seconds), so it's re-fetched after that moves, and at least
+     * once a day: a provider's list can show a series' change hours after the series does.
+     */
+    fun due(series: Series, checked: Check?, nowMs: Long): Boolean =
+        checked == null || series.added != checked.added || nowMs - checked.atMs >= DAY_MS
 
     /**
      * Whether what comes next arrived after the user watched (so it's "new", not a season that was

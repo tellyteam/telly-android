@@ -169,6 +169,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** One new-episode check at a time. */
     private val episodeCheck = Mutex()
+    /** Asked for while a check ran: another pass straight after it, for these series (or all). */
+    private var checkQueued = false
+    private var checkNextAll = false
+    private val checkNextSeries = mutableSetOf<String>()
 
     private val _sync = MutableStateFlow(SyncStatus(container.syncSettings.load()))
     val sync: StateFlow<SyncStatus> = _sync
@@ -186,9 +190,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _series.collect {
                 if (it !is Load.Done) return@collect
-                checkForNewEpisodes()
                 // Everything a shared entry might point at is loaded now.
-                syncNow()
+                syncThenCheck()
             }
         }
         val saved = _providers.value.let { list -> list.firstOrNull { it.id == container.providerStore.activeId } ?: list.firstOrNull() }
@@ -494,82 +497,115 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Brings back series that were watched to the end of what they had, once the provider adds more:
-     * the series returns to Continue watching at the next episode ("New episodes" when they arrived
-     * after the user watched). Runs as the series list loads and when the player closes; each series
-     * is only fetched again after the provider has changed it, or to record it as watched
-     * (PLAYBACK.md, Watched titles).
+     * the series returns to Continue watching at the next episode not yet watched ("New episodes"
+     * when they arrived after the user watched). Runs after syncing as the series list loads and as
+     * telly comes back to the front (the player included), and after a sync that changed a series
+     * ([only]: just those). Each series is only fetched again after the provider has changed it,
+     * daily, or to record it as watched (PLAYBACK.md, Watched titles). Asked for while a check runs,
+     * it runs once more after it, rather than twice at once.
      */
-    fun checkForNewEpisodes() {
-        val provider = xtream() ?: return
+    fun checkForNewEpisodes(only: Set<String>? = null) {
         recordWatchedFilms()
-        val groups = (_series.value as? Load.Done)?.value ?: return
         viewModelScope.launch {
-            if (!episodeCheck.tryLock()) return@launch
+            if (!episodeCheck.tryLock()) {
+                checkQueued = true
+                if (only == null) checkNextAll = true else checkNextSeries += only
+                return@launch
+            }
             try {
-                val history = container.lastWatched.history.value
-                val progress = container.watchProgress
-                val watched = container.watched
-                val candidates = history.filter { it.caughtUp(progress) }
-                // Watched series that Continue watching's short history has let go are checked too.
-                val letGo = watched.marks.value.filter { (k, m) ->
-                    m.on && k.startsWith("series:") && history.none { it.seriesId == k.removePrefix("series:") }
+                var series = only
+                while (true) {
+                    checkEpisodes(series)
+                    if (!checkQueued) break
+                    series = if (checkNextAll) null else checkNextSeries.toSet()
+                    checkQueued = false
+                    checkNextAll = false
+                    checkNextSeries.clear()
                 }
-                if (candidates.isEmpty() && letGo.isEmpty()) return@launch
-                val all = withContext(Dispatchers.Default) { groups.flatMap { it.series } }
-                val byId = all.associateBy { it.id }
-                val byName = all.associateBy { it.name }
-                val checks = container.newEpisodeChecks
-                suspend fun fetch(show: Series) = try {
-                    repo.seriesData(provider, show, Source.NETWORK)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    null
-                }
-                for (entry in candidates) {
-                    val show = entry.seriesId?.let(byId::get) ?: byName[entry.heading] ?: continue
-                    val key = FavouritesStore.series(show)
-                    val mark = watched.marks.value[key]
-                    val recorded = mark?.on == true && mark.episode == entry.current.id
-                    if (recorded && !NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
-                    val data = fetch(show) ?: continue
-                    checks.mark(show.id, show.added)
-                    val next = NewEpisodes.after(data.seasons, entry.current.id)
-                    if (next == null) {
-                        if (!recorded) watched.set(key, true, entry.current.id)
-                        continue
-                    }
-                    if (mark?.on == true) watched.set(key, false)
-                    val (season, index) = next
-                    val fresh = NewEpisodes.isNew(show, entry.savedAt)
-                    container.lastWatched.save(
-                        entry.heading, live = false, season.episodes, index,
-                        // Never moved to the front: Continue watching leads with what you last watched.
-                        seriesId = show.id, newEpisodes = fresh, toFront = false,
-                        // Still "when it was last watched", which orders Continue watching on every synced device.
-                        now = entry.savedAt,
-                    )
-                    if (fresh) Toast.makeText(getApplication(), "New episodes of ${entry.heading}", Toast.LENGTH_LONG).show()
-                }
-                for ((key, mark) in letGo) {
-                    val show = byId[key.removePrefix("series:")] ?: continue
-                    if (!NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
-                    val data = fetch(show) ?: continue
-                    checks.mark(show.id, show.added)
-                    val (season, index) = NewEpisodes.after(data.seasons, mark.episode) ?: continue
-                    watched.set(key, false)
-                    val fresh = NewEpisodes.isNew(show, mark.at)
-                    container.lastWatched.save(
-                        show.name, live = false, season.episodes, index,
-                        seriesId = show.id, newEpisodes = fresh, toFront = false, now = mark.at,
-                    )
-                    if (fresh) Toast.makeText(getApplication(), "New episodes of ${show.name}", Toast.LENGTH_LONG).show()
-                }
-                syncSoon()
             } finally {
                 episodeCheck.unlock()
             }
         }
+    }
+
+    private suspend fun checkEpisodes(only: Set<String>?) {
+        val provider = xtream() ?: return
+        val groups = (_series.value as? Load.Done)?.value ?: return
+        val history = container.lastWatched.history.value
+        val progress = container.watchProgress
+        val watched = container.watched
+        val candidates = history.filter { it.caughtUp(progress) && (only == null || it.seriesId in only) }
+        // Watched series that Continue watching's short history has let go are checked too.
+        val letGo = watched.marks.value.filter { (k, m) ->
+            val id = k.removePrefix("series:")
+            m.on && k.startsWith("series:") && (only == null || id in only) && history.none { it.seriesId == id }
+        }
+        if (candidates.isEmpty() && letGo.isEmpty()) return
+        // Episodes finished here or on a linked device count alike.
+        val done = { e: Channel -> progress.get(e.streamUrl)?.finished == true }
+        val all = withContext(Dispatchers.Default) { groups.flatMap { it.series } }
+        val byId = all.associateBy { it.id }
+        val byName = all.associateBy { it.name }
+        val checks = container.newEpisodeChecks
+        suspend fun fetch(show: Series) = try {
+            repo.seriesData(provider, show, Source.NETWORK)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        for (entry in candidates) {
+            val show = entry.seriesId?.let(byId::get) ?: byName[entry.heading] ?: continue
+            val key = FavouritesStore.series(show)
+            val mark = watched.marks.value[key]
+            val recorded = mark?.on == true && mark.episode == entry.current.id
+            if (recorded && !NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
+            val data = fetch(show) ?: continue
+            checks.mark(show.id, show.added)
+            val (next, upTo) = NewEpisodes.afterWatched(data.seasons, entry.current.id, done)
+            if (next == null) {
+                if (!(mark?.on == true && mark.episode == upTo)) watched.set(key, true, upTo)
+                // Watched further on another device: Continue watching's entry follows, still out of the row.
+                if (upTo != entry.current.id) data.seasons.firstOrNull { s -> s.episodes.any { it.id == upTo } }?.let { s ->
+                    container.lastWatched.save(
+                        entry.heading, live = false, s.episodes, s.episodes.indexOfFirst { it.id == upTo },
+                        seriesId = show.id, toFront = false, now = entry.savedAt,
+                    )
+                }
+                continue
+            }
+            if (mark?.on == true) watched.set(key, false)
+            val (season, index) = next
+            val fresh = NewEpisodes.isNew(show, entry.savedAt)
+            container.lastWatched.save(
+                entry.heading, live = false, season.episodes, index,
+                // Never moved to the front: Continue watching leads with what you last watched.
+                seriesId = show.id, newEpisodes = fresh, toFront = false,
+                // Still "when it was last watched", which orders Continue watching on every synced device.
+                now = entry.savedAt,
+            )
+            if (fresh) Toast.makeText(getApplication(), "New episodes of ${entry.heading}", Toast.LENGTH_LONG).show()
+        }
+        for ((key, mark) in letGo) {
+            val show = byId[key.removePrefix("series:")] ?: continue
+            if (!NewEpisodes.due(show, checks.get(show.id), System.currentTimeMillis())) continue
+            val data = fetch(show) ?: continue
+            checks.mark(show.id, show.added)
+            val (next, upTo) = NewEpisodes.afterWatched(data.seasons, mark.episode, done)
+            if (next == null) {
+                if (upTo != mark.episode) watched.set(key, true, upTo)
+                continue
+            }
+            val (season, index) = next
+            watched.set(key, false)
+            val fresh = NewEpisodes.isNew(show, mark.at)
+            container.lastWatched.save(
+                show.name, live = false, season.episodes, index,
+                seriesId = show.id, newEpisodes = fresh, toFront = false, now = mark.at,
+            )
+            if (fresh) Toast.makeText(getApplication(), "New episodes of ${show.name}", Toast.LENGTH_LONG).show()
+        }
+        syncSoon()
     }
 
     // ---- My List, Continue watching and progress (changes here are shared when sync is on) ----
@@ -658,6 +694,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * start, when telly comes back to the front (including from the player) and after changes;
      * never during playback, which happens in another activity.
      */
+    /**
+     * On opening, and coming back to the front: other devices' changes first, so the episode check
+     * after them counts episodes watched there.
+     */
+    fun syncThenCheck() {
+        viewModelScope.launch {
+            val status = _sync.value
+            val config = status.config
+            if (config != null && System.currentTimeMillis() - (status.lastSyncedAt ?: 0) >= SYNC_GAP_MS) runSync(config)
+            checkForNewEpisodes()
+        }
+    }
+
     fun syncNow(force: Boolean = false) {
         val status = _sync.value
         val config = status.config ?: return
@@ -714,6 +763,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 r.history.replace(next.history, next.removed, next.cleared)
                 r.favourites.replace(next.favourites, next.listChanges)
                 r.watched.replace(next.watched.mapValues { (_, w) -> WatchedStore.Mark(w.at, w.on, w.episode) })
+                // A series watched to the end on another device is recorded here without waiting for a refresh.
+                if (isActive) SyncLocal.seriesChanged(locals.getValue(tag), next).takeIf { it.isNotEmpty() }?.let(::checkForNewEpisodes)
             }
             _sync.value = _sync.value.copy(busy = false, lastSyncedAt = System.currentTimeMillis())
             return null
@@ -752,8 +803,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val provider = xtream() ?: return null
                 val show = (_series.value as? Load.Done)?.value?.firstNotNullOfOrNull { g -> g.series.firstOrNull { it.id == e.series } }
                     ?: return null
-                val data = runCatching { repo.seriesData(provider, show, Source.CACHE) }.getOrNull()
+                val saved = runCatching { repo.seriesData(provider, show, Source.CACHE) }.getOrNull()
+                // A copy saved before that episode arrived doesn't have it: the series is fetched again.
+                val data = saved?.takeIf { d -> d.seasons.any { s -> s.episodes.any { it.id == e.id } } }
                     ?: runCatching { repo.seriesData(provider, show, Source.NETWORK) }.getOrNull()
+                    ?: saved
                     ?: return null
                 data.seasons.firstNotNullOfOrNull { season ->
                     season.episodes.indexOfFirst { it.id == e.id }.takeIf { it >= 0 }?.let { entry(show.name, false, season.episodes, it, show.id) }
