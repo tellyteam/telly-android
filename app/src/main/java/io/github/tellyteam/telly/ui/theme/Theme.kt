@@ -49,6 +49,7 @@ object Telly {
     val AccentInk = Color(0xFF062330)
     val AccentSoft = Color(0x294FC3F7) // ~16% accent, for selected/focused fills
     val LogoTile = Color(0xFFEEF2F6) // channel logos read better on a pale tile
+    val Warning = Color(0xFFFFB74D) // what an unencrypted connection exposes
 
     val CardShape = RoundedCornerShape(10.dp)
     val ControlShape = RoundedCornerShape(12.dp)

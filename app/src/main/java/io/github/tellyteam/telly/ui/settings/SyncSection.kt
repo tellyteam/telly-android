@@ -122,7 +122,7 @@ fun SyncSection(
     }
 
     Text(
-        "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never shared.",
+        "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never shared, and the relay keeps no logs.",
         fontSize = 13.sp,
         color = Telly.Muted,
         modifier = Modifier.width(560.dp),

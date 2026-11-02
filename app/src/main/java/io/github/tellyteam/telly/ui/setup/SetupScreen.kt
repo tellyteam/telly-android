@@ -17,8 +17,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,9 +31,11 @@ import androidx.compose.ui.unit.sp
 import io.github.tellyteam.telly.data.DEFAULT_PLAYLIST_NAME
 import io.github.tellyteam.telly.data.DEFAULT_PROVIDER_NAME
 import io.github.tellyteam.telly.data.Provider
+import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TellyWordmark
 import io.github.tellyteam.telly.ui.theme.TvTextField
 import io.github.tellyteam.telly.ui.theme.focusRing
+import kotlinx.coroutines.delay
 
 @Composable
 fun SetupScreen(
@@ -53,6 +57,8 @@ fun SetupScreen(
     var password by rememberSaveable { mutableStateOf(xtream?.password ?: "") }
     var url by rememberSaveable { mutableStateOf(m3u?.url ?: "") }
     var allowCleartext by rememberSaveable { mutableStateOf(existing?.allowCleartext ?: false) }
+    var confirmCleartext by remember { mutableStateOf(false) }
+    LaunchedEffect(confirmCleartext) { if (confirmCleartext) { delay(6_000); confirmCleartext = false } }
     var showPassword by rememberSaveable { mutableStateOf(false) }
 
     val canConnect = if (useXtream) server.isNotBlank() && username.isNotBlank() && password.isNotBlank() else url.isNotBlank()
@@ -90,13 +96,27 @@ fun SetupScreen(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Switch(checked = allowCleartext, onCheckedChange = { allowCleartext = it }, modifier = Modifier.focusRing())
+                // Turning it on takes a second press, once the warning has been on screen.
+                Switch(
+                    checked = allowCleartext,
+                    onCheckedChange = {
+                        when {
+                            !it -> allowCleartext = false
+                            confirmCleartext -> { allowCleartext = true; confirmCleartext = false }
+                            else -> confirmCleartext = true
+                        }
+                    },
+                    modifier = Modifier.focusRing(),
+                )
                 Column {
-                    Text("Allow unencrypted HTTP")
+                    Text(if (confirmCleartext) "Press again to allow unencrypted HTTP" else "Allow unencrypted HTTP")
                     Text(
-                        "Only turn on if your provider has no HTTPS. Your login is then sent in plain text.",
+                        when {
+                            allowCleartext || confirmCleartext -> "Not encrypted. Anyone on the same network or along the way to your provider can read your username, password and what you watch."
+                            else -> "Only if your provider has no HTTPS. Your login and what you watch would be sent unencrypted."
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (allowCleartext || confirmCleartext) Telly.Warning else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
