@@ -77,6 +77,8 @@ fun SettingsScreen(
     onStartSync: suspend (code: String?) -> String?,
     onSyncNow: () -> Unit,
     onStopSync: () -> Unit,
+    onRefreshPlus: suspend () -> Unit,
+    onPlusCheckout: suspend () -> String,
     onClearProgress: () -> Unit,
 ) {
     var managing by rememberSaveable { mutableStateOf<CategoryKind?>(null) }
@@ -205,7 +207,7 @@ fun SettingsScreen(
 
         if (syncUnlocked) {
             Section("Sync") {
-                SyncSection(sync, onStartSync, onSyncNow, onStopSync)
+                SyncSection(sync, onStartSync, onSyncNow, onStopSync, onRefreshPlus, onPlusCheckout)
             }
         }
 

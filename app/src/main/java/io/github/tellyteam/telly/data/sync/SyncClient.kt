@@ -12,7 +12,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import java.io.IOException
 
-class SyncException(message: String) : IOException(message)
+open class SyncException(message: String) : IOException(message)
+
+/** The relay wants telly Plus for this household before it syncs (402). */
+class PlusNeededException : SyncException("Sync needs telly Plus for this household.")
+
+/** The household's telly Plus, as the relay has it: the last day it's paid for, and whether it's on sale here. */
+data class PlusStatus(val until: Long?, val onSale: Boolean)
 
 /** Talking to the relay. Only sealed parcels ever leave the device. */
 class SyncClient(private val http: OkHttpClient) {
@@ -38,6 +44,21 @@ class SyncClient(private val http: OkHttpClient) {
         send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/$device").put(body.toRequestBody(OCTETS)), keys)
     }
 
+    /** The household's telly Plus, from the relay. */
+    suspend fun plus(relay: String, keys: SyncCrypto.Keys): PlusStatus {
+        val o = Json.parseToJsonElement(send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/plus").get(), keys)) as? JsonObject
+        return PlusStatus(
+            until = (o?.get("until") as? JsonPrimitive)?.content?.toLongOrNull(),
+            onSale = (o?.get("onSale") as? JsonPrimitive)?.content == "true",
+        )
+    }
+
+    /** A checkout link for this household, to open on a phone: Paddle takes the payment. */
+    suspend fun checkout(relay: String, keys: SyncCrypto.Keys): String {
+        val o = Json.parseToJsonElement(send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/plus/checkout").post(ByteArray(0).toRequestBody(OCTETS)), keys)) as? JsonObject
+        return (o?.get("url") as? JsonPrimitive)?.content ?: throw SyncException("The sync relay didn't give a checkout link.")
+    }
+
     /** Takes this device's parcel off the relay (the others keep theirs). */
     suspend fun leave(relay: String, keys: SyncCrypto.Keys, device: String) {
         send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/$device").delete(), keys)
@@ -60,7 +81,8 @@ class SyncClient(private val http: OkHttpClient) {
         response.use {
             when {
                 it.code == 401 -> throw SyncException("This sync code is no longer valid on the relay.")
-                it.code == 402 -> throw SyncException("Sync needs telly Plus for this household. It can be bought on an iPhone, iPad or Mac linked to it.")
+                it.code == 402 -> throw PlusNeededException()
+                it.code == 503 -> throw SyncException("telly Plus isn't on sale here yet.")
                 it.code == 409 -> throw SyncException("Too many devices are linked to this code (12 at most).")
                 !it.isSuccessful -> throw SyncException("The sync relay answered ${it.code}.")
             }

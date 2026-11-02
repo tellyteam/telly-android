@@ -39,6 +39,8 @@ fun SyncSection(
     onStart: suspend (code: String?) -> String?,
     onSyncNow: () -> Unit,
     onStop: () -> Unit,
+    onRefreshPlus: suspend () -> Unit,
+    onCheckout: suspend () -> String,
 ) {
     val scope = rememberCoroutineScope()
     var joining by remember { mutableStateOf(false) }
@@ -102,6 +104,8 @@ fun SyncSection(
                 }
             }
         }
+        // The payment's QR code replaces the sync code's, so there's one to scan; focus moves to Sync now.
+        PlusPanel(status, onRefreshPlus, onCheckout, onLink = { showCode = false; runCatching { linkedFocus.requestFocus() } })
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             PillButton(if (status.busy) "Syncing…" else "Sync now", primary = false, onClick = { if (!status.busy) onSyncNow() }, modifier = Modifier.focusRequester(linkedFocus))
             // Stays put and only changes its label, so focus never falls out to the menu.
@@ -127,7 +131,7 @@ fun SyncSection(
         color = Telly.Muted,
         modifier = Modifier.width(560.dp),
     )
-    Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.padding(top = 12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             PillButton(if (linking && !joining) "Starting…" else "Start syncing", primary = true, onClick = { if (!linking) link(null) }, modifier = Modifier.focusRequester(unlinkedFocus))
             PillButton("I have a code", primary = false, onClick = { joining = !joining })
@@ -141,6 +145,63 @@ fun SyncSection(
         error?.let { Text(it, fontSize = 13.sp, color = Telly.Accent, modifier = Modifier.width(560.dp)) }
     }
 }
+
+/**
+ * The household's telly Plus: on (until when), or Get telly Plus. Buying happens on a phone: a QR
+ * code opens Paddle's checkout for this household, and the TV waits for the relay to hear of it.
+ */
+@Composable
+private fun PlusPanel(status: SyncStatus, onRefresh: suspend () -> Unit, onCheckout: suspend () -> String, onLink: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var link by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var asking by remember { mutableStateOf(false) }
+    val plus = status.plus
+    LaunchedEffect(status.config) { onRefresh() }
+    // While the QR code shows, the relay is asked every few seconds whether the payment's come through.
+    LaunchedEffect(link, plus?.until) {
+        if (link == null || plus?.until != null) return@LaunchedEffect
+        repeat(120) { delay(5_000); onRefresh() }
+    }
+    LaunchedEffect(plus?.until) { if (plus?.until != null) link = null }
+
+    Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        when {
+            plus == null -> return@Column
+            plus.until != null -> Text("telly Plus is on for this household, until ${dayText(plus.until)}.", fontSize = 13.sp, color = Telly.Text)
+            !plus.onSale -> return@Column
+            link != null -> Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                QrCode(link!!, size = 150.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Scan with your phone to get telly Plus", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
+                    Text(
+                        "£4.99 a year, for every device in this household. Paddle takes the payment; telly turns on here once it's done.",
+                        fontSize = 12.sp,
+                        color = Telly.Faint,
+                        modifier = Modifier.width(400.dp),
+                    )
+                }
+            }
+            else -> {
+                Text("Sync is part of telly Plus: £4.99 a year, for every device in this household.", fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.width(560.dp))
+                PillButton(if (asking) "Getting a link…" else "Get telly Plus", primary = true, onClick = {
+                    if (asking) return@PillButton
+                    asking = true
+                    error = null
+                    scope.launch {
+                        try { link = onCheckout(); onLink() } catch (e: Exception) { error = e.message ?: "Couldn't get a link." }
+                        asking = false
+                    }
+                })
+            }
+        }
+        error?.let { Text(it, fontSize = 13.sp, color = Telly.Accent) }
+    }
+}
+
+/** A day count (days since 1970, as the relay keeps it) as a date, e.g. 2 November 2027. */
+private fun dayText(day: Long): String =
+    java.time.LocalDate.ofEpochDay(day).format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.UK))
 
 private fun ago(at: Long, now: Long = System.currentTimeMillis()): String {
     val minutes = (now - at) / 60_000

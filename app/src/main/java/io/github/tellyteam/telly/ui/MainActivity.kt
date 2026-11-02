@@ -255,6 +255,8 @@ class MainActivity : ComponentActivity() {
                         onStartSync = vm::startSync,
                         onSyncNow = { vm.syncNow(force = true) },
                         onStopSync = vm::stopSync,
+                        onRefreshPlus = vm::refreshPlus,
+                        onPlusCheckout = vm::plusCheckout,
                         onClearProgress = {
                             vm.clearProgress()
                             Toast.makeText(this@MainActivity, "Watch progress cleared", Toast.LENGTH_SHORT).show()

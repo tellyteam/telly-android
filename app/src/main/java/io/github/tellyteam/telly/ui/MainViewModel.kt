@@ -50,6 +50,8 @@ import io.github.tellyteam.telly.data.sync.SyncConfig
 import io.github.tellyteam.telly.data.sync.SyncCrypto
 import io.github.tellyteam.telly.data.sync.SyncSettings
 import io.github.tellyteam.telly.data.sync.SyncEntry
+import io.github.tellyteam.telly.data.sync.PlusNeededException
+import io.github.tellyteam.telly.data.sync.PlusStatus
 import io.github.tellyteam.telly.data.sync.SyncException
 import io.github.tellyteam.telly.data.sync.SyncLocal
 import io.github.tellyteam.telly.data.sync.SyncWatched
@@ -100,6 +102,8 @@ data class SyncStatus(
     val busy: Boolean = false,
     val lastSyncedAt: Long? = null,
     val error: String? = null,
+    /** The household's telly Plus, once the relay has said. */
+    val plus: PlusStatus? = null,
 )
 
 /** Where the app-update check has got to. */
@@ -678,11 +682,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         container.syncSettings.save(config)
         _sync.value = SyncStatus(config)
         val error = runSync(config)
+        refreshPlus()
+        // A household that needs telly Plus stays linked: it's bought from here, then syncs.
+        if (error != null && _sync.value.plus?.until == null && error == PlusNeededException().message) return null
         if (error != null) {
             container.syncSettings.clear()
             _sync.value = SyncStatus(error = error)
         }
         return error
+    }
+
+    /** Asks the relay about the household's telly Plus. */
+    suspend fun refreshPlus() {
+        val config = _sync.value.config ?: return
+        val plus = runCatching { container.syncClient.plus(config.relay, SyncCrypto.deriveKeys(config.code)) }.getOrNull() ?: return
+        if (_sync.value.config != config) return
+        val was = _sync.value.plus
+        _sync.value = _sync.value.copy(plus = plus)
+        // Just bought (on a phone, from this TV's QR code): sync straight away.
+        if (plus.until != null && was?.until == null) syncNow(force = true)
+    }
+
+    /** A checkout link for telly Plus, for this household. Throws a readable error. */
+    suspend fun plusCheckout(): String {
+        val config = _sync.value.config ?: throw SyncException("Start syncing first.")
+        return container.syncClient.checkout(config.relay, SyncCrypto.deriveKeys(config.code))
     }
 
     /** Shows or hides Settings → Sync. Returns whether it's now shown. Hiding never unlinks a linked device. */
