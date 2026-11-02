@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LinearProgressIndicator
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -57,6 +59,7 @@ import io.github.tellyteam.telly.data.store.CategoryKind
 import io.github.tellyteam.telly.data.store.CategoryPrefs
 import io.github.tellyteam.telly.data.store.LastWatchedStore.LastWatched
 import io.github.tellyteam.telly.data.store.WatchProgressStore
+import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.Load
 import io.github.tellyteam.telly.ui.components.ChannelTile
 import io.github.tellyteam.telly.ui.components.EmptyHint
@@ -313,7 +316,7 @@ fun MyListScreen(
         item(key = "title") {
             Row(Modifier.padding(start = PageInset, bottom = 14.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("My List", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
-                Text("☰ Menu or hold OK on anything to add or remove it", fontSize = 12.sp, color = Telly.Faint)
+                Text(if (DeviceKind.isTouch(LocalContext.current)) "Long-press anything to add or remove it" else "☰ Menu or hold OK on anything to add or remove it", fontSize = 12.sp, color = Telly.Faint)
             }
         }
         favouriteRows(shelves, favourites, watched, actions, showEmpty = true)
@@ -380,7 +383,7 @@ private fun Billboard(
     val primaryFocus = remember { FocusRequester() }
     Box(Modifier.fillMaxWidth().height(286.dp)) {
         FadedBackdrop(imageUrl, Modifier.align(Alignment.TopEnd).fillMaxHeight().fillMaxWidth(0.66f))
-        Column(Modifier.padding(start = PageInset, top = 40.dp).width(430.dp)) {
+        Column(Modifier.padding(start = PageInset, top = 40.dp).widthIn(max = 430.dp)) {
             Text(eyebrow.uppercase(), fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold, color = Telly.Accent)
             Text(
                 title,

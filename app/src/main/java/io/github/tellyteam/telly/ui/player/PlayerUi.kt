@@ -8,6 +8,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,6 +88,8 @@ class PlayerUiState {
     var subtitles by mutableStateOf(emptyList<TrackOption>())
     var banner by mutableStateOf(false)
     var message by mutableStateOf<String?>(null)
+    /** A phone or tablet: the controls also answer to touch, and there's a close button. */
+    var touch by mutableStateOf(false)
 }
 
 class PlayerActions(
@@ -94,12 +99,29 @@ class PlayerActions(
     val openPanel: (Panel) -> Unit,
     val chooseAspect: (Aspect) -> Unit,
     val interacted: () -> Unit,
+    /** A tap on the picture: shows the controls, or hides them (and any panel). */
+    val tap: () -> Unit = {},
+    /** Jumps to a point in a film or episode, 0..1 along it. */
+    val seekToFraction: (Float) -> Unit = {},
+    val close: () -> Unit = {},
 )
 
 @Composable
 fun PlayerUi(state: PlayerUiState, provider: Provider?, actions: PlayerActions, video: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         video()
+        // Touch: a tap shows or hides the controls; a double tap on either half skips 10 seconds.
+        // Under the controls, so their buttons take their own taps.
+        if (state.touch) {
+            Box(
+                Modifier.fillMaxSize().pointerInput(state.live) {
+                    detectTapGestures(
+                        onTap = { actions.tap() },
+                        onDoubleTap = { at -> if (!state.live) actions.seekBy(if (at.x < size.width / 2) -10_000L else 10_000L) },
+                    )
+                },
+            )
+        }
 
         if (state.buffering && !state.overlay) {
             CircularProgressIndicator(color = Telly.Accent, modifier = Modifier.align(Alignment.Center))
@@ -166,6 +188,15 @@ private fun Overlay(state: PlayerUiState, provider: Provider?, actions: PlayerAc
             Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Color(0xCC070A0F), 1f to Color.Transparent))
                 .padding(start = 40.dp, top = 28.dp, end = 40.dp, bottom = 50.dp),
         ) {
+            if (state.touch) {
+                Text(
+                    "✕",
+                    fontSize = 22.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(bottom = 10.dp).clip(Telly.ControlShape).clickable(onClick = actions.close)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
             Text(
                 if (state.live && state.number > 0) "${state.number}  ${state.title}" else state.title,
                 fontSize = 26.sp,
@@ -212,6 +243,13 @@ private fun Overlay(state: PlayerUiState, provider: Provider?, actions: PlayerAc
                                 Key.DirectionDown -> { runCatching { playFocus.requestFocus() }; true }
                                 else -> false
                             }
+                        }
+                        // Touch: tap or drag along the bar to move there. (OK on a remote still plays or pauses.)
+                        .pointerInput(Unit) {
+                            detectTapGestures { at -> actions.seekToFraction((at.x / size.width).coerceIn(0f, 1f)) }
+                        }
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { change, _ -> actions.seekToFraction((change.position.x / size.width).coerceIn(0f, 1f)) }
                         }
                         .clickable { actions.playPause() }
                         .padding(vertical = 8.dp),

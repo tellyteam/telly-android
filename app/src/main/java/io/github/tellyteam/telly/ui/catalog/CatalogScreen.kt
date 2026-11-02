@@ -31,6 +31,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.Load
 import io.github.tellyteam.telly.ui.components.LocalFocusMemory
 import io.github.tellyteam.telly.ui.components.MediaRow
@@ -98,7 +100,7 @@ fun <T> CatalogScreen(
             TvTextField(
                 label = "🎤 Search ${title.lowercase()}",
                 value = query,
-                placeholder = "OK to type or speak",
+                placeholder = if (DeviceKind.isTouch(LocalContext.current)) "Tap to type" else "OK to type or speak",
                 modifier = Modifier.width(280.dp),
                 focusRequester = searchFocus,
                 onChange = { query = it },

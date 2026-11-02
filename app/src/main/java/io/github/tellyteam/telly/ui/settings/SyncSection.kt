@@ -2,9 +2,11 @@ package io.github.tellyteam.telly.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -99,14 +101,14 @@ fun SyncSection(
                         "Scan the QR code with your iPad's camera, or enter the code in Settings → Sync on your other devices. Keep it private: anyone with it can see what you've watched.",
                         fontSize = 12.sp,
                         color = Telly.Faint,
-                        modifier = Modifier.width(400.dp),
+                        modifier = Modifier.widthIn(max = 400.dp),
                     )
                 }
             }
         }
         // The payment's QR code replaces the sync code's, so there's one to scan; focus moves to Sync now.
         PlusPanel(status, onRefreshPlus, onCheckout, onLink = { showCode = false; runCatching { linkedFocus.requestFocus() } })
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PillButton(if (status.busy) "Syncing…" else "Sync now", primary = false, onClick = { if (!status.busy) onSyncNow() }, modifier = Modifier.focusRequester(linkedFocus))
             // Stays put and only changes its label, so focus never falls out to the menu.
             PillButton(if (showCode) "Hide code" else "Show code to link another device", primary = false, onClick = { showCode = !showCode })
@@ -120,7 +122,7 @@ fun SyncSection(
             "Provider logins are never shared: sign in on each device.",
             fontSize = 13.sp,
             color = Telly.Muted,
-            modifier = Modifier.padding(top = 16.dp).width(560.dp),
+            modifier = Modifier.padding(top = 16.dp).widthIn(max = 560.dp),
         )
         return
     }
@@ -129,20 +131,20 @@ fun SyncSection(
         "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never shared, and the relay keeps no logs.",
         fontSize = 13.sp,
         color = Telly.Muted,
-        modifier = Modifier.width(560.dp),
+        modifier = Modifier.widthIn(max = 560.dp),
     )
-    Column(Modifier.padding(top = 12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             PillButton(if (linking && !joining) "Starting…" else "Start syncing", primary = true, onClick = { if (!linking) link(null) }, modifier = Modifier.focusRequester(unlinkedFocus))
             PillButton("I have a code", primary = false, onClick = { joining = !joining })
         }
         if (joining) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TvTextField("Code, e.g. ABCD-EFGH-JKMN-PQRS", code, KeyboardType.Ascii, modifier = Modifier.width(380.dp)) { code = it }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                TvTextField("Code, e.g. ABCD-EFGH-JKMN-PQRS", code, KeyboardType.Ascii, modifier = Modifier.widthIn(max = 380.dp)) { code = it }
                 PillButton(if (linking) "Linking…" else "Link", primary = true, onClick = { if (!linking && code.isNotBlank()) link(code) })
             }
         }
-        error?.let { Text(it, fontSize = 13.sp, color = Telly.Accent, modifier = Modifier.width(560.dp)) }
+        error?.let { Text(it, fontSize = 13.sp, color = Telly.Accent, modifier = Modifier.widthIn(max = 560.dp)) }
     }
 }
 
@@ -178,12 +180,12 @@ private fun PlusPanel(status: SyncStatus, onRefresh: suspend () -> Unit, onCheck
                         "£4.99 a year, for every device in this household. Paddle takes the payment; telly turns on here once it's done.",
                         fontSize = 12.sp,
                         color = Telly.Faint,
-                        modifier = Modifier.width(400.dp),
+                        modifier = Modifier.widthIn(max = 400.dp),
                     )
                 }
             }
             else -> {
-                Text("Sync is part of telly Plus: £4.99 a year, for every device in this household.", fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.width(560.dp))
+                Text("Sync is part of telly Plus: £4.99 a year, for every device in this household.", fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.widthIn(max = 560.dp))
                 PillButton(if (asking) "Getting a link…" else "Get telly Plus", primary = true, onClick = {
                     if (asking) return@PillButton
                     asking = true

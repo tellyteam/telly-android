@@ -5,11 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
@@ -21,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -33,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.tellyteam.telly.data.store.CategoryKind
 import io.github.tellyteam.telly.data.store.CategoryPrefs
+import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.components.PageInset
 import io.github.tellyteam.telly.ui.components.mediaClick
 import io.github.tellyteam.telly.ui.home.PillButton
@@ -58,12 +62,13 @@ fun CategoryManager(
     Column(Modifier.fillMaxSize().padding(start = PageInset, top = 22.dp, end = 40.dp)) {
         Text("${kind.label} categories", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
         Text(
-            "OK shows or hides a category.  ☰ (or hold OK) pins it to the top; pinned categories appear in the order you pin them.",
+            if (DeviceKind.isTouch(LocalContext.current)) "Tap shows or hides a category. Long-press pins it to the top; pinned categories appear in the order you pin them."
+            else "OK shows or hides a category.  ☰ (or hold OK) pins it to the top; pinned categories appear in the order you pin them.",
             fontSize = 13.sp,
             color = Telly.Muted,
-            modifier = Modifier.padding(top = 6.dp).width(640.dp),
+            modifier = Modifier.padding(top = 6.dp).widthIn(max = 640.dp),
         )
-        Row(Modifier.padding(top = 14.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(Modifier.padding(top = 14.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PillButton("Done", primary = true, onClick = onDone)
             if (prefs.pinned.isNotEmpty() || prefs.hidden.isNotEmpty()) {
                 PillButton("Reset to the provider's order", primary = false, onClick = onReset)
@@ -99,7 +104,7 @@ private fun CategoryRow(
     var focused by remember { mutableStateOf(false) }
     Row(
         modifier
-            .width(640.dp)
+            .widthIn(max = 640.dp)
             .onFocusChanged { focused = it.isFocused }
             .border(2.dp, if (focused) Telly.Accent else Color.Transparent, Telly.RowShape)
             .clip(Telly.RowShape)

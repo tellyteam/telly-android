@@ -18,6 +18,8 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
+import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.components.FocusMemory
 import io.github.tellyteam.telly.ui.components.LocalFocusMemory
 import io.github.tellyteam.telly.ui.theme.Telly
@@ -40,6 +42,11 @@ fun AppShell(
     updateAvailable: Boolean = false,
     page: @Composable () -> Unit,
 ) {
+    // A phone gets the tab bar instead of the rail.
+    if (DeviceKind.isPhone(LocalContext.current)) {
+        PhoneShell(destinations, selected, onSelect, overlay, refreshing, updateAvailable, page)
+        return
+    }
     val railFocus = remember { FocusRequester() }
     val focusMemory = remember { FocusMemory() }
     var railHasFocus by remember { mutableStateOf(false) }

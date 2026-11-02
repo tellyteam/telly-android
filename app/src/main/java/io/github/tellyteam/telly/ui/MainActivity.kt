@@ -1,5 +1,6 @@
 package io.github.tellyteam.telly.ui
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -67,6 +68,8 @@ class MainActivity : ComponentActivity() {
         setTheme(R.style.Theme_Telly)
         super.onCreate(savedInstanceState)
         window.setBackgroundDrawableResource(R.color.background)
+        // On a phone the pages stay upright, as on iPhone; only the player turns sideways.
+        if (DeviceKind.isPhone(this)) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         setContent {
             TellyTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

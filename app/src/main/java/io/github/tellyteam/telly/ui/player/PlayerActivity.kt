@@ -2,6 +2,7 @@ package io.github.tellyteam.telly.ui.player
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -42,6 +43,7 @@ import io.github.tellyteam.telly.data.store.Aspect
 import io.github.tellyteam.telly.data.store.LastWatchedStore
 import io.github.tellyteam.telly.data.store.SubtitlePreference
 import io.github.tellyteam.telly.data.store.WatchProgressStore
+import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.theme.TellyTheme
 import java.util.Locale
 
@@ -92,6 +94,15 @@ class PlayerActivity : ComponentActivity() {
         openPanel = { ui.panel = it; refreshTracks() },
         chooseAspect = { chooseAspect(it) },
         interacted = { resetHide() },
+        tap = {
+            when {
+                ui.panel != Panel.NONE -> { ui.panel = Panel.NONE; resetHide() }
+                ui.overlay -> ui.overlay = false
+                else -> showOverlay()
+            }
+        },
+        seekToFraction = { f -> seekToFraction(f) },
+        close = { finish() },
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,6 +119,9 @@ class PlayerActivity : ComponentActivity() {
         index = (savedInstanceState?.getInt(EXTRA_INDEX) ?: intent.getIntExtra(EXTRA_INDEX, 0)).coerceIn(items.indices)
         provider = runCatching { container.activeProvider()?.provider }.getOrNull()
         ui.live = live
+        ui.touch = DeviceKind.isTouch(this)
+        // A phone turns sideways for the picture, whichever way it's held.
+        if (DeviceKind.isPhone(this)) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 
         playerView = PlayerView(this).apply {
             useController = false // telly draws its own controls
@@ -306,6 +320,14 @@ class PlayerActivity : ComponentActivity() {
         val p = player ?: return
         val duration = p.duration.takeIf { it != C.TIME_UNSET } ?: return
         p.seekTo((p.currentPosition + ms).coerceIn(0, duration))
+        refreshPosition()
+        resetHide()
+    }
+
+    private fun seekToFraction(f: Float) {
+        val p = player ?: return
+        val duration = p.duration.takeIf { it != C.TIME_UNSET } ?: return
+        p.seekTo((duration * f).toLong())
         refreshPosition()
         resetHide()
     }

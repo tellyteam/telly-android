@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -195,7 +196,7 @@ fun FilmDetailScreen(
                     color = Telly.Faint,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = PageInset, top = 22.dp).width(520.dp),
+                    modifier = Modifier.padding(start = PageInset, top = 22.dp).widthIn(max = 520.dp),
                 )
             }
         }
@@ -214,7 +215,7 @@ private fun Header(
     watched: Boolean = false,
 ) {
     val primaryFocus = remember { FocusRequester() }
-    Column(Modifier.padding(start = PageInset).width(500.dp)) {
+    Column(Modifier.padding(start = PageInset).widthIn(max = 500.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(eyebrow.uppercase(), fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold, color = Telly.Accent)
             if (watched) WatchedBadge()

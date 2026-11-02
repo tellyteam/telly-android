@@ -3,6 +3,7 @@ package io.github.tellyteam.telly.ui.live
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -48,6 +51,7 @@ import io.github.tellyteam.telly.data.Channel
 import io.github.tellyteam.telly.data.ChannelGroup
 import io.github.tellyteam.telly.data.Provider
 import io.github.tellyteam.telly.data.store.FavouritesStore
+import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.components.mediaClick
 import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TvTextField
@@ -102,6 +106,58 @@ fun LiveScreen(
     val previewPlayer = rememberPreviewPlayer()
 
     val shown = preview?.takeIf { it in channels } ?: channels.firstOrNull()
+    val touch = DeviceKind.isTouch(LocalContext.current)
+    val heading = when {
+        results != null && channels.isEmpty() -> "No channels match “$q”"
+        results != null -> "${channels.size} channels match “$q”"
+        selected?.name == FAVOURITES && channels.isEmpty() ->
+            if (touch) "No favourites yet: long-press a channel to add it" else "No favourites yet: hold OK or press ☰ Menu on a channel to add it"
+        else -> selected?.let { if (it.name == FAVOURITES) it.name else ChannelNames.category(it.name) }.orEmpty()
+    }
+
+    // A phone: search, the categories in a row to swipe through, and the channels below. Tapping
+    // a channel plays it; there's no preview beside the list.
+    if (DeviceKind.isPhone(LocalContext.current)) {
+        Column(Modifier.fillMaxSize().padding(top = 8.dp)) {
+            TvTextField(
+                label = "Search channels",
+                value = query,
+                placeholder = "Tap to type",
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                onChange = { query = it },
+            )
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(groups, key = { _, g -> g.name }) { _, g ->
+                    val on = results == null && g == selected
+                    Text(
+                        "${if (g.name == FAVOURITES) g.name else ChannelNames.category(g.name)}  ${g.channels.size}",
+                        fontSize = 14.sp,
+                        color = if (on) Color.White else Telly.Muted,
+                        modifier = Modifier.clip(Telly.ControlShape).background(if (on) Telly.SurfaceHigh else Telly.Surface)
+                            .clickable { selectedName = g.name; query = "" }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+            Text(heading, fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
+            val phoneList = rememberLazyListState()
+            LaunchedEffect(selected?.name, q) { phoneList.scrollToItem(0) }
+            LazyColumn(state = phoneList, verticalArrangement = Arrangement.spacedBy(2.dp), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 16.dp)) {
+                itemsIndexed(channels, key = { _, c -> c.id }) { index, channel ->
+                    ChannelRow(
+                        modifier = Modifier,
+                        number = index + 1,
+                        channel = channel,
+                        provider = provider,
+                        favourite = FavouritesStore.live(channel) in favouriteSet,
+                        onFocus = {},
+                        onClick = { onPlay(channels, index) },
+                        onFavourite = { onToggleFavourite(FavouritesStore.live(channel)) },
+                    )
+                }
+            }
+        }
+        return
+    }
 
     Row(Modifier.fillMaxSize()) {
         // Categories
@@ -114,7 +170,7 @@ fun LiveScreen(
             TvTextField(
                 label = "🎤 Search channels",
                 value = query,
-                placeholder = "OK to type or speak",
+                placeholder = if (touch) "Tap to type" else "OK to type or speak",
                 modifier = Modifier.padding(top = 12.dp, bottom = 10.dp).fillMaxWidth(),
                 focusRequester = searchFocus,
                 onChange = { query = it },
@@ -142,12 +198,7 @@ fun LiveScreen(
         LaunchedEffect(selected?.name, q) { listState.scrollToItem(0) }
         Column(Modifier.weight(1f).fillMaxHeight().padding(top = 22.dp)) {
             Text(
-                when {
-                    results != null && channels.isEmpty() -> "No channels match “$q”"
-                    results != null -> "${channels.size} channels match “$q”"
-                    selected?.name == FAVOURITES && channels.isEmpty() -> "No favourites yet: hold OK or press ☰ Menu on a channel to add it"
-                    else -> selected?.let { if (it.name == FAVOURITES) it.name else ChannelNames.category(it.name) }.orEmpty()
-                },
+                heading,
                 fontSize = 13.sp,
                 color = Telly.Muted,
                 modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
@@ -314,7 +365,7 @@ private fun Preview(channel: Channel?, live: Boolean, player: ExoPlayer, provide
             Text("Next  ${clock(next.startMs)}  ${next.title}", fontSize = 12.sp, color = Telly.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.weight(1f))
-        Text("OK to watch  ·  ☰ to add to My List", fontSize = 12.sp, color = Telly.Muted)
+        Text(if (DeviceKind.isTouch(LocalContext.current)) "Tap to watch  ·  long-press to add to My List" else "OK to watch  ·  ☰ to add to My List", fontSize = 12.sp, color = Telly.Muted)
         if (nowNext == null) Text("Looking up the programme guide…", fontSize = 11.sp, color = Telly.Faint)
     }
 }

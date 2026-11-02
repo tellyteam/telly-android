@@ -4,10 +4,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -116,9 +118,9 @@ fun SettingsScreen(
                     "Each provider keeps its own My List, progress and Continue watching.",
                     fontSize = 13.sp,
                     color = Telly.Muted,
-                    modifier = Modifier.width(560.dp),
+                    modifier = Modifier.widthIn(max = 560.dp),
                 )
-                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     providers.forEach { saved ->
                         val inUse = saved.id == activeId
                         PillButton(
@@ -151,7 +153,7 @@ fun SettingsScreen(
                     else -> Text("Checking your subscription…", fontSize = 13.sp, color = Telly.Faint, modifier = Modifier.padding(top = 6.dp))
                 }
             }
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PillButton(
                     "Edit provider",
                     primary = false,
@@ -175,7 +177,7 @@ fun SettingsScreen(
                 "In the last minute of an episode, a small prompt counts down to the next one: OK plays it now, Back cancels it.",
                 fontSize = 13.sp,
                 color = Telly.Muted,
-                modifier = Modifier.width(560.dp),
+                modifier = Modifier.widthIn(max = 560.dp),
             )
             Row(Modifier.padding(top = 12.dp)) {
                 PillButton(
@@ -191,9 +193,9 @@ fun SettingsScreen(
                 "Pin the categories you use most to the top, and hide the ones you never watch. Hidden categories also stay out of Home and Search.",
                 fontSize = 13.sp,
                 color = Telly.Muted,
-                modifier = Modifier.width(560.dp),
+                modifier = Modifier.widthIn(max = 560.dp),
             )
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 CategoryKind.entries.filter { categories[it].orEmpty().isNotEmpty() }.forEach { kind ->
                     val p = categoryPrefs[kind] ?: CategoryPrefs()
                     val extra = listOfNotNull(
@@ -217,7 +219,7 @@ fun SettingsScreen(
                     if (sync.config != null) " Your linked devices are cleared too." else "",
                 fontSize = 13.sp,
                 color = Telly.Muted,
-                modifier = Modifier.width(560.dp),
+                modifier = Modifier.widthIn(max = 560.dp),
             )
             Row(Modifier.padding(top = 12.dp)) {
                 PillButton(
@@ -240,9 +242,9 @@ fun SettingsScreen(
                 "telly saves your lists so they open instantly, and refreshes them in the background each time it starts. Use Refresh in the menu to update them now.",
                 fontSize = 13.sp,
                 color = Telly.Muted,
-                modifier = Modifier.width(560.dp),
+                modifier = Modifier.widthIn(max = 560.dp),
             )
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 PillButton(
                     if (confirmClear) "Press again to clear" else "Clear saved data",
                     primary = false,
@@ -261,7 +263,7 @@ fun SettingsScreen(
                 "Clearing removes saved lists and artwork, then downloads them again. Your My List, watch progress and history are kept.",
                 fontSize = 12.sp,
                 color = Telly.Faint,
-                modifier = Modifier.padding(top = 8.dp).width(560.dp),
+                modifier = Modifier.padding(top = 8.dp).widthIn(max = 560.dp),
             )
         }
 
@@ -285,14 +287,14 @@ fun SettingsScreen(
             }
             status?.let { Text(it, fontSize = 13.sp, color = Telly.Text, modifier = Modifier.padding(top = 4.dp)) }
             (update as? UpdateState.Available)?.release?.notes?.let {
-                Text(it, fontSize = 12.sp, color = Telly.Faint, maxLines = 4, modifier = Modifier.padding(top = 4.dp).width(560.dp))
+                Text(it, fontSize = 12.sp, color = Telly.Faint, maxLines = 4, modifier = Modifier.padding(top = 4.dp).widthIn(max = 560.dp))
             }
             if (release != null) {
                 Text(
                     "Android then asks you to confirm: choose Install, then Open. Everything you've set up is kept.",
                     fontSize = 13.sp,
                     color = Telly.Accent,
-                    modifier = Modifier.padding(top = 4.dp).width(560.dp),
+                    modifier = Modifier.padding(top = 4.dp).widthIn(max = 560.dp),
                 )
             }
             // One button that stays put and only changes its label, so the remote's focus never
