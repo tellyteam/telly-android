@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -432,6 +434,7 @@ private fun Billboard(
 /** Home's one reminder of telly Plus, a few days after it was first offered. Closing it is for good. */
 @Composable
 private fun PlusReminderCard(onSee: () -> Unit, onClose: () -> Unit) {
+    val focus = LocalFocusManager.current
     Column(
         Modifier.padding(start = PageInset, end = 40.dp, top = 12.dp, bottom = 12.dp).widthIn(max = 720.dp)
             .background(Telly.Surface, RoundedCornerShape(16.dp)).padding(20.dp),
@@ -441,7 +444,11 @@ private fun PlusReminderCard(onSee: () -> Unit, onClose: () -> Unit) {
         Text("With telly Plus: Sync across your devices.", fontSize = 15.sp, color = Telly.Muted)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
             PillButton("See telly Plus", primary = true, onClick = onSee)
-            PillButton("Not now", primary = false, onClick = onClose)
+            PillButton("Not now", primary = false, onClick = {
+                // On to the row below (or back up) before the card goes, not off to the side menu.
+                if (!focus.moveFocus(FocusDirection.Down)) focus.moveFocus(FocusDirection.Up)
+                onClose()
+            })
         }
     }
 }
