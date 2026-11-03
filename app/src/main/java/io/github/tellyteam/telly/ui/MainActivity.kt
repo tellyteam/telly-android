@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.activity.viewModels
 import io.github.tellyteam.telly.R
 import io.github.tellyteam.telly.container
 import io.github.tellyteam.telly.data.nameInSentence
@@ -57,7 +58,10 @@ import io.github.tellyteam.telly.ui.home.rememberShelves
 import io.github.tellyteam.telly.ui.player.PlayerActivity
 import io.github.tellyteam.telly.ui.shell.AppShell
 import io.github.tellyteam.telly.ui.shell.Destination
+import io.github.tellyteam.telly.ui.setup.JoinScreen
+import io.github.tellyteam.telly.ui.setup.PlusOfferScreen
 import io.github.tellyteam.telly.ui.setup.SetupScreen
+import io.github.tellyteam.telly.ui.setup.WelcomeScreen
 import io.github.tellyteam.telly.ui.theme.TellyTheme
 import io.github.tellyteam.telly.ui.theme.TellyWordmark
 import io.github.tellyteam.telly.ui.theme.focusRing
@@ -79,6 +83,8 @@ class MainActivity : ComponentActivity() {
                     // episodes, or have been watched on another device.
                     LifecycleResumeEffect(vm) {
                         vm.syncThenCheck()
+                        // Back from the player: after the first proper watch, telly Plus is offered.
+                        vm.playerClosed()
                         // A TV can keep telly running for days: a new release is looked for here too.
                         vm.checkForUpdatesIfDue()
                         onPauseOrDispose {}
@@ -86,12 +92,22 @@ class MainActivity : ComponentActivity() {
                     when (val s = state) {
                         is UiState.Setup -> {
                             val sync by vm.sync.collectAsStateWithLifecycle()
-                            SetupScreen(
-                                existing = s.existing,
-                                onConnect = vm::submitProvider,
-                                onForget = if (s.existing != null) vm::forgetAttempt else null,
-                                onStopSync = if (sync.config != null) vm::stopSync else null,
-                            )
+                            val syncUnlocked by vm.syncUnlocked.collectAsStateWithLifecycle()
+                            // The first run: Welcome, then joining other devices, then the provider.
+                            // A device that's linked (just joined, say) goes straight to the provider.
+                            var step by rememberSaveable { mutableStateOf("welcome") }
+                            val firstRun = s.existing == null && sync.config == null
+                            when {
+                                firstRun && step == "welcome" -> WelcomeScreen(canJoin = syncUnlocked, onSetUp = { step = "setup" }, onJoin = { step = "join" })
+                                firstRun && step == "join" -> JoinScreen(collect = vm::collectJoin, onLink = { vm.startSync(it) }, onSetUp = { step = "setup" }, onBack = { step = "welcome" })
+                                else -> SetupScreen(
+                                    existing = s.existing,
+                                    onConnect = vm::submitProvider,
+                                    onForget = if (s.existing != null) vm::forgetAttempt else null,
+                                    onStopSync = if (sync.config != null) vm::stopSync else null,
+                                    onBack = if (firstRun) ({ step = "welcome" }) else null,
+                                )
+                            }
                         }
                         is UiState.Loading -> Centered {
                             TellyWordmark(fontSize = 64.sp)
@@ -115,6 +131,9 @@ class MainActivity : ComponentActivity() {
                                 )
                             } else {
                                 Browse(vm, s)
+                                val plusOffer by vm.plusOffer.collectAsStateWithLifecycle()
+                                val sync by vm.sync.collectAsStateWithLifecycle()
+                                if (plusOffer) PlusOfferScreen(checkout = vm::plusCheckout, refresh = vm::refreshPlus, plusOn = sync.plus?.until != null, onClose = vm::closePlusOffer)
                             }
                         }
                     }
@@ -314,6 +333,8 @@ class MainActivity : ComponentActivity() {
 
     private fun play(playlist: List<Channel>, index: Int, live: Boolean, heading: String, seriesId: String? = null) {
         container.playlist = playlist
+        // The same view model the screens use: for telly Plus's offer after the first proper watch.
+        viewModels<MainViewModel>().value.playerOpened()
         startActivity(PlayerActivity.intent(this, index, live, heading, seriesId))
     }
 }

@@ -48,6 +48,7 @@ import io.github.tellyteam.telly.data.withAllowCleartext
 import io.github.tellyteam.telly.data.sync.SyncBundle
 import io.github.tellyteam.telly.data.sync.SyncConfig
 import io.github.tellyteam.telly.data.sync.SyncCrypto
+import io.github.tellyteam.telly.data.sync.SyncJoin
 import io.github.tellyteam.telly.data.sync.SyncSettings
 import io.github.tellyteam.telly.data.sync.SyncEntry
 import io.github.tellyteam.telly.data.sync.PlusNeededException
@@ -57,6 +58,13 @@ import io.github.tellyteam.telly.data.sync.SyncLocal
 import io.github.tellyteam.telly.data.sync.SyncWatched
 import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
+
+/** A proper first watch: long enough to have seen telly working, not a quick look round. */
+val FIRST_WATCH_MS: Long = BuildConfig.DEV_FIRST_WATCH_SECONDS.toLongOrNull()?.times(1000) ?: (5 * 60_000L)
+
+/** Whether leaving the player after [watchedMs] offers telly Plus. */
+fun offersPlus(watchedMs: Long, syncShown: Boolean, hasPlus: Boolean, offeredBefore: Boolean): Boolean =
+    watchedMs >= FIRST_WATCH_MS && syncShown && !hasPlus && !offeredBefore
 
 sealed interface UiState {
     /** No provider yet, or the user chose to edit it (then [existing] pre-fills the form). */
@@ -703,10 +711,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (plus.until != null && was?.until == null) syncNow(force = true)
     }
 
-    /** A checkout link for telly Plus, for this household. Throws a readable error. */
+    /**
+     * A checkout link for telly Plus, for this household. Throws a readable error. A TV with no
+     * household yet starts one first: telly Plus belongs to a household.
+     */
     suspend fun plusCheckout(): String {
+        if (_sync.value.config == null) startSync(null)?.let { throw SyncException(it) }
         val config = _sync.value.config ?: throw SyncException("Start syncing first.")
         return container.syncClient.checkout(config.relay, SyncCrypto.deriveKeys(config.code))
+    }
+
+    // ---- Joining, and telly Plus after the first watch ----
+
+    /** The link code an iPhone or iPad left for this TV's join QR code, once; null while there's none yet. */
+    suspend fun collectJoin(join: SyncJoin): String? = container.syncClient.collectJoin(SyncSettings.RELAY, join)
+
+    private var playerOpenedAt: Long? = null
+
+    /** Set once, after the first proper watch: telly Plus is offered over Home. */
+    private val _plusOffer = MutableStateFlow(false)
+    val plusOffer: StateFlow<Boolean> = _plusOffer
+
+    fun playerOpened() {
+        if (playerOpenedAt == null) playerOpenedAt = System.currentTimeMillis()
+    }
+
+    /**
+     * Back from the player: the first time that was a proper watch (five minutes or more), telly
+     * Plus is offered, once. After "Not now" it's only in Settings → Sync. Like Sync, it waits for
+     * the hidden switch until telly Plus is on sale for everyone.
+     */
+    fun playerClosed() {
+        val opened = playerOpenedAt ?: return
+        playerOpenedAt = null
+        val settings = container.syncSettings
+        if (!offersPlus(System.currentTimeMillis() - opened, _syncUnlocked.value, _sync.value.plus?.until != null, settings.plusOffered)) return
+        viewModelScope.launch {
+            val onSale = _sync.value.plus?.onSale ?: container.syncClient.onSale(SyncSettings.RELAY)
+            if (!onSale || settings.plusOffered) return@launch
+            settings.plusOffered = true
+            _plusOffer.value = true
+        }
+    }
+
+    fun closePlusOffer() {
+        _plusOffer.value = false
     }
 
     /** Shows or hides Settings → Sync. Returns whether it's now shown. Hiding never unlinks a linked device. */

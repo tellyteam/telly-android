@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import io.github.tellyteam.telly.data.DEFAULT_PLAYLIST_NAME
 import io.github.tellyteam.telly.data.DEFAULT_PROVIDER_NAME
 import io.github.tellyteam.telly.data.Provider
+import io.github.tellyteam.telly.ui.DeviceKind
+import androidx.compose.ui.platform.LocalContext
 import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TellyWordmark
 import io.github.tellyteam.telly.ui.theme.TvTextField
@@ -46,8 +48,10 @@ fun SetupScreen(
     onCancel: (() -> Unit)? = null,
     /** Set while this device is still linked for sync with no provider: a way to unlink. */
     onStopSync: (() -> Unit)? = null,
+    /** On the first run, back to Welcome. */
+    onBack: (() -> Unit)? = null,
 ) {
-    BackHandler(enabled = onCancel != null) { onCancel?.invoke() }
+    BackHandler(enabled = onCancel != null || onBack != null) { (onCancel ?: onBack)?.invoke() }
     val xtream = existing as? Provider.Xtream
     val m3u = existing as? Provider.M3u
     var useXtream by rememberSaveable { mutableStateOf(m3u == null) }
@@ -63,15 +67,45 @@ fun SetupScreen(
 
     val canConnect = if (useXtream) server.isNotBlank() && username.isNotBlank() && password.isNotBlank() else url.isNotBlank()
 
+    fun provider(): Provider {
+        val label = name.trim()
+        return if (useXtream) {
+            Provider.Xtream(label.ifEmpty { DEFAULT_PROVIDER_NAME }, server.trim(), username.trim(), password, allowCleartext)
+        } else {
+            Provider.M3u(label.ifEmpty { DEFAULT_PLAYLIST_NAME }, url.trim(), allowCleartext)
+        }
+    }
+
+    // A TV asks one thing at a time, as on LG: the TV's keyboard stays up for one field, and OK goes on.
+    val context = LocalContext.current
+    if (remember { DeviceKind.isTv(context) }) {
+        SetupSteps(
+            existing = existing,
+            useXtream = useXtream, onKind = { useXtream = it },
+            server = server, onServer = { server = it },
+            username = username, onUsername = { username = it },
+            password = password, onPassword = { password = it },
+            url = url, onUrl = { url = it },
+            allowCleartext = allowCleartext, onCleartext = { allowCleartext = it },
+            canConnect = canConnect,
+            onConnect = { onConnect(provider()) },
+            onForget = onForget,
+            onCancel = onCancel,
+            onBack = onBack,
+            onStopSync = onStopSync.takeIf { existing == null && onCancel == null },
+        )
+        return
+    }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             TellyWordmark(fontSize = 48.sp)
-            Text(if (existing == null) "Add your IPTV provider" else "Your IPTV provider", style = MaterialTheme.typography.headlineSmall)
+            Text(if (existing == null) "Add your provider" else "Your provider", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Details are stored encrypted on this device and sent only to your provider.",
+                "Sign in with the details your TV provider gave you. They're stored encrypted on this device and sent only to your provider.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
@@ -125,25 +159,17 @@ fun SetupScreen(
                 Button(
                     enabled = canConnect,
                     modifier = Modifier.focusRing(),
-                    onClick = {
-                        val label = name.trim()
-                        onConnect(
-                            if (useXtream) {
-                                Provider.Xtream(label.ifEmpty { DEFAULT_PROVIDER_NAME }, server.trim(), username.trim(), password, allowCleartext)
-                            } else {
-                                Provider.M3u(label.ifEmpty { DEFAULT_PLAYLIST_NAME }, url.trim(), allowCleartext)
-                            },
-                        )
-                    },
+                    onClick = { onConnect(provider()) },
                 ) { Text("Connect") }
+                if (onBack != null) OutlinedButton(onClick = onBack, modifier = Modifier.focusRing()) { Text("Back") }
                 if (onForget != null) {
                     OutlinedButton(onClick = onForget, modifier = Modifier.focusRing()) { Text("Remove provider") }
                 }
             }
             if (onStopSync != null && existing == null && onCancel == null) {
-                Text("This device is still linked for sync", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
+                Text("This device is linked with your other devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp))
                 Text(
-                    "Its progress syncs again once you add a provider.",
+                    "Add your provider to pick up where you left off on them. Use the same one, signed in the same way.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
