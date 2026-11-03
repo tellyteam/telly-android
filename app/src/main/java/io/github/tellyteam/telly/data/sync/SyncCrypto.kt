@@ -13,7 +13,7 @@ object SyncCrypto {
     private const val VERSION: Byte = 1
     private const val NONCE_BYTES = 12
     private const val TAG_BITS = 128
-    private val random = SecureRandom()
+    internal val random = SecureRandom()
 
     class Keys(
         val mailbox: String,
@@ -72,7 +72,7 @@ object SyncCrypto {
     /** The plaintext, or null if the parcel isn't ours, was altered, or is from a newer version. */
     fun open(keys: Keys, device: String, box: ByteArray): String? = openBox(keys.key, aad(keys, device), box)
 
-    private fun sealBox(key: ByteArray, aad: ByteArray, plaintext: String, nonce: ByteArray): ByteArray {
+    internal fun sealBox(key: ByteArray, aad: ByteArray, plaintext: String, nonce: ByteArray): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
             init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, nonce))
             updateAAD(aad)
@@ -80,7 +80,7 @@ object SyncCrypto {
         return byteArrayOf(VERSION) + nonce + cipher.doFinal(plaintext.toByteArray())
     }
 
-    private fun openBox(key: ByteArray, aad: ByteArray, box: ByteArray): String? {
+    internal fun openBox(key: ByteArray, aad: ByteArray, box: ByteArray): String? {
         if (box.size < 1 + NONCE_BYTES + 16 || box[0] != VERSION) return null
         return runCatching {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {

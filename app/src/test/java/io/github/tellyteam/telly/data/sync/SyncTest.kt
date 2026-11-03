@@ -286,3 +286,24 @@ class SyncBundleTest {
         assertFalse("logins" in merged.toJson())
     }
 }
+
+class SyncJoinTest {
+    /** PROTOCOL.md's join box, sealed the same way on every device. */
+    @Test
+    fun matchesTheSharedVector() {
+        val join = SyncJoin.parse("telly://join?id=00112233445566778899aabbccddeeff&key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")!!
+        val box = join.seal("0123456789ABCDEF", ByteArray(12) { (it + 1).toByte() })
+        assertEquals("010102030405060708090a0b0c7ec839ba88f1d2bc6e9252752327df1e757bd8bfd52e1480e77d847a23a8054b9746a38ee4fdc41370785a", box.joinToString("") { "%02x".format(it) })
+        assertEquals("0123456789ABCDEF", join.open(box))
+    }
+
+    @Test
+    fun opensOnlyItsOwnBox() {
+        val join = SyncJoin.new()
+        val box = join.seal("0123456789ABCDEF")
+        assertNull(SyncJoin.new().open(box))
+        assertNull(SyncJoin(SyncJoin.new().id, join.key).open(box))
+        assertEquals(join.id, SyncJoin.parse(join.url)?.id)
+        assertNull(SyncJoin.parse("telly://sync?code=0123456789ABCDEF"))
+    }
+}

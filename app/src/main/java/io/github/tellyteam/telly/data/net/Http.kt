@@ -26,7 +26,9 @@ class CleartextBlockedException(host: String) : IOException(
 class CleartextGuard(private val policy: NetworkPolicy) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val url = chain.request().url
-        if (!url.isHttps && !policy.allowCleartext) throw CleartextBlockedException(url.host)
+        // A debug build's local test relay (-PdevRelay) is plain HTTP; release builds have none.
+        val devRelay = BuildConfig.DEV_RELAY.isNotEmpty() && url.toString().startsWith(BuildConfig.DEV_RELAY)
+        if (!url.isHttps && !policy.allowCleartext && !devRelay) throw CleartextBlockedException(url.host)
         return chain.proceed(chain.request())
     }
 }

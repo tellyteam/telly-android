@@ -1,6 +1,7 @@
 package io.github.tellyteam.telly.data.sync
 
 import android.content.Context
+import io.github.tellyteam.telly.BuildConfig
 import io.github.tellyteam.telly.data.store.KeystoreCipher
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -31,15 +32,24 @@ class SyncSettings(context: Context) {
         get() = prefs.getBoolean(UNLOCKED, false)
         set(value) = prefs.edit().putBoolean(UNLOCKED, value).apply()
 
+    /** telly Plus has been offered after the first watch: it isn't again. */
+    var plusOffered: Boolean
+        get() = prefs.getBoolean(PLUS_OFFERED, false)
+        set(value) = prefs.edit().putBoolean(PLUS_OFFERED, value).apply()
+
     fun clear() {
         prefs.edit().remove(KEY).apply()
     }
 
     companion object {
-        /** telly's relay: sync always uses it (a link saved with another one is moved to it). */
-        const val RELAY = "https://telly-sync.tellyteam.workers.dev"
+        /**
+         * telly's relay: sync always uses it (a link saved with another one is moved to it). A debug
+         * build can use a local one instead: `-PdevRelay=http://10.0.2.2:8787`.
+         */
+        val RELAY = BuildConfig.DEV_RELAY.ifEmpty { "https://telly-sync.tellyteam.workers.dev" }
         private const val KEY = "config"
         private const val UNLOCKED = "unlocked"
+        private const val PLUS_OFFERED = "plusOffered"
         private const val SHARE_LOGINS = "shareLogins"
         private val json = Json { ignoreUnknownKeys = true }
     }

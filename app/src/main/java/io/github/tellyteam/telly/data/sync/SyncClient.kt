@@ -59,6 +59,29 @@ class SyncClient(private val http: OkHttpClient) {
         return (o?.get("url") as? JsonPrimitive)?.content ?: throw SyncException("The sync relay didn't give a checkout link.")
     }
 
+    /** Whether telly Plus can be bought here, for a TV with no household yet. */
+    suspend fun onSale(relay: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            http.newCall(Request.Builder().url("${base(relay)}/v1/plus").header("Cache-Control", "no-store").build()).execute().use {
+                (Json.parseToJsonElement(it.body?.string().orEmpty()) as? JsonObject)?.get("onSale")?.let { v -> (v as? JsonPrimitive)?.content == "true" }
+            }
+        }.getOrNull() ?: false
+    }
+
+    /** The link code another device left in [join]'s box, once; null while it's still empty. Needs no token. */
+    suspend fun collectJoin(relay: String, join: SyncJoin): String? = withContext(Dispatchers.IO) {
+        val response = try {
+            http.newCall(Request.Builder().url("${base(relay)}/v1/join/${join.id}").header("Cache-Control", "no-store").build()).execute()
+        } catch (e: IOException) {
+            throw SyncException("Couldn't reach the sync relay.")
+        }
+        response.use {
+            if (it.code != 200) return@withContext null
+            val body = ((Json.parseToJsonElement(it.body?.string().orEmpty()) as? JsonObject)?.get("body") as? JsonPrimitive)?.content
+            body?.let(Base64Text::decode)?.let(join::open) ?: throw SyncException("That code couldn't be read. Scan the QR code again.")
+        }
+    }
+
     /** Takes this device's parcel off the relay (the others keep theirs). */
     suspend fun leave(relay: String, keys: SyncCrypto.Keys, device: String) {
         send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/$device").delete(), keys)

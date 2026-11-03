@@ -60,10 +60,16 @@ android {
         val devKeys = listOf("type", "name", "server", "username", "password", "url", "allowCleartext")
         debug {
             devKeys.forEach { buildConfigField("String", "DEV_PROVIDER_${it.uppercase()}", javaString(devProvider.getProperty(it))) }
+            // A local sync relay for testing, e.g. -PdevRelay=http://10.0.2.2:8787 (`npm run dev` in telly-sync).
+            buildConfigField("String", "DEV_RELAY", javaString(findProperty("devRelay") as String?))
+            // Seconds in the player that count as the first proper watch, for testing (5 minutes otherwise).
+            buildConfigField("String", "DEV_FIRST_WATCH_SECONDS", javaString(findProperty("devFirstWatch") as String?))
         }
         release {
             // Release builds never carry the developer's test provider.
             devKeys.forEach { buildConfigField("String", "DEV_PROVIDER_${it.uppercase()}", "\"\"") }
+            buildConfigField("String", "DEV_RELAY", "\"\"")
+            buildConfigField("String", "DEV_FIRST_WATCH_SECONDS", "\"\"")
             signingConfig = signingConfigs.getByName("release").takeIf { it.storeFile != null }
             isMinifyEnabled = true
             isShrinkResources = true
