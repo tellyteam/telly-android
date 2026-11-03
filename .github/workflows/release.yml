@@ -16,6 +16,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Waits for approval in GitHub (Settings → Environments → release) before anything is built or
+    # published: a pushed tag alone never puts a new version on people's TVs.
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
