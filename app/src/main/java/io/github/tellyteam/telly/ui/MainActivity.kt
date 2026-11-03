@@ -190,6 +190,8 @@ class MainActivity : ComponentActivity() {
                     vm.removeFromContinue(entry.slot)
                     Toast.makeText(this@MainActivity, "Removed from Continue watching", Toast.LENGTH_SHORT).show()
                 },
+                seePlus = vm::seePlus,
+                closePlusReminder = vm::closePlusReminder,
             )
         }
         val favouriteSet = remember(favourites) { favourites.toSet() }
@@ -239,7 +241,11 @@ class MainActivity : ComponentActivity() {
                 overlay = overlay,
             ) {
                 when (selected) {
-                    Destination.HOME -> HomeScreen(history, progress, progressVersion, shelves, favourites, actions)
+                    Destination.HOME -> {
+                        val reminder by vm.plusReminder.collectAsStateWithLifecycle()
+                        val sync by vm.sync.collectAsStateWithLifecycle()
+                        HomeScreen(history, progress, progressVersion, shelves, favourites, actions, plusReminder = reminder && sync.plus?.until == null)
+                    }
                     Destination.SEARCH -> SearchScreen(shelves, favourites, actions)
                     Destination.MY_LIST -> MyListScreen(shelves, favourites, actions)
                     Destination.SETTINGS -> SettingsScreen(

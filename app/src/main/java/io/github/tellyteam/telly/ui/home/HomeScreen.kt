@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LinearProgressIndicator
@@ -81,6 +82,9 @@ class HomeActions(
     val toggleFavourite: (String) -> Unit,
     /** The remote's Menu button (or holding OK) on a Continue watching card. */
     val removeFromContinue: (LastWatched) -> Unit,
+    /** Home's reminder of telly Plus: its offer, and closing it for good. */
+    val seePlus: () -> Unit = {},
+    val closePlusReminder: () -> Unit = {},
 )
 
 /**
@@ -153,6 +157,7 @@ fun HomeScreen(
     shelves: Shelves,
     favourites: List<String>,
     actions: HomeActions,
+    plusReminder: Boolean = false,
 ) {
     val favouriteSet = remember(favourites) { favourites.toSet() }
     val continueItems = remember(history, progressVersion) {
@@ -216,6 +221,8 @@ fun HomeScreen(
                 )
             }
         }
+
+        if (plusReminder) item(key = "plus-reminder") { PlusReminderCard(actions.seePlus, actions.closePlusReminder) }
 
         if (continueItems.isNotEmpty()) {
             item(key = "continue") {
@@ -418,6 +425,23 @@ private fun Billboard(
         LaunchedEffect(Unit) {
             runCatching { primaryFocus.requestFocus() }
             onTookFocus()
+        }
+    }
+}
+
+/** Home's one reminder of telly Plus, a few days after it was first offered. Closing it is for good. */
+@Composable
+private fun PlusReminderCard(onSee: () -> Unit, onClose: () -> Unit) {
+    Column(
+        Modifier.padding(start = PageInset, end = 40.dp, top = 12.dp, bottom = 12.dp).widthIn(max = 720.dp)
+            .background(Telly.Surface, RoundedCornerShape(16.dp)).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Pick up where you left off on your other devices", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
+        Text("With telly Plus: Sync across your devices.", fontSize = 15.sp, color = Telly.Muted)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+            PillButton("See telly Plus", primary = true, onClick = onSee)
+            PillButton("Not now", primary = false, onClick = onClose)
         }
     }
 }

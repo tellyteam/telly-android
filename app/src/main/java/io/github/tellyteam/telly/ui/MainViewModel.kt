@@ -66,6 +66,13 @@ val FIRST_WATCH_MS: Long = BuildConfig.DEV_FIRST_WATCH_SECONDS.toLongOrNull()?.t
 fun offersPlus(watchedMs: Long, syncShown: Boolean, hasPlus: Boolean, offeredBefore: Boolean): Boolean =
     watchedMs >= FIRST_WATCH_MS && syncShown && !hasPlus && !offeredBefore
 
+/** Days after telly Plus was first offered that Home shows its one reminder. */
+const val PLUS_REMINDER_DAYS = 3
+
+/** Home's reminder: from a few days after the first offer, until it's closed or telly Plus is on. */
+fun plusReminderDue(nowMs: Long, offeredAtMs: Long, closed: Boolean, syncShown: Boolean, hasPlus: Boolean): Boolean =
+    offeredAtMs > 0 && !closed && syncShown && !hasPlus && nowMs - offeredAtMs >= PLUS_REMINDER_DAYS * 86_400_000L
+
 sealed interface UiState {
     /** No provider yet, or the user chose to edit it (then [existing] pre-fills the form). */
     data class Setup(val existing: Provider? = null) : UiState
@@ -742,6 +749,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * the hidden switch until telly Plus is on sale for everyone.
      */
     fun playerClosed() {
+        checkPlusReminder()
         val opened = playerOpenedAt ?: return
         playerOpenedAt = null
         val settings = container.syncSettings
@@ -750,12 +758,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val onSale = _sync.value.plus?.onSale ?: container.syncClient.onSale(SyncSettings.RELAY)
             if (!onSale || settings.plusOffered) return@launch
             settings.plusOffered = true
+            settings.plusOfferedAt = System.currentTimeMillis()
             _plusOffer.value = true
         }
     }
 
     fun closePlusOffer() {
         _plusOffer.value = false
+    }
+
+    /** Home's one reminder of telly Plus, a few days after it was first offered. */
+    private val _plusReminder = MutableStateFlow(false)
+    val plusReminder: StateFlow<Boolean> = _plusReminder
+
+    // At launch: here, not in the first init, which runs before the line above.
+    init { checkPlusReminder() }
+
+    /** Whether Home's reminder is due now (at launch, and coming back from the player). */
+    fun checkPlusReminder() {
+        val s = container.syncSettings
+        _plusReminder.value = plusReminderDue(System.currentTimeMillis(), s.plusOfferedAt, s.plusReminderClosed, _syncUnlocked.value, _sync.value.plus?.until != null)
+    }
+
+    /** The reminder's "See telly Plus": the same offer as after the first watch. */
+    fun seePlus() {
+        _plusOffer.value = true
+    }
+
+    fun closePlusReminder() {
+        container.syncSettings.plusReminderClosed = true
+        _plusReminder.value = false
     }
 
     /** Shows or hides Settings → Sync. Returns whether it's now shown. Hiding never unlinks a linked device. */

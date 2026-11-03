@@ -37,6 +37,16 @@ class SyncSettings(context: Context) {
         get() = prefs.getBoolean(PLUS_OFFERED, false)
         set(value) = prefs.edit().putBoolean(PLUS_OFFERED, value).apply()
 
+    /** When telly Plus was first offered (epoch ms; 0: not yet), for Home's reminder a few days on. */
+    var plusOfferedAt: Long
+        get() = prefs.getLong(PLUS_OFFERED_AT, 0)
+        set(value) = prefs.edit().putLong(PLUS_OFFERED_AT, value).apply()
+
+    /** Home's reminder of telly Plus was closed: it's for good. */
+    var plusReminderClosed: Boolean
+        get() = prefs.getBoolean(PLUS_REMINDER_CLOSED, false)
+        set(value) = prefs.edit().putBoolean(PLUS_REMINDER_CLOSED, value).apply()
+
     fun clear() {
         prefs.edit().remove(KEY).apply()
     }
@@ -50,6 +60,8 @@ class SyncSettings(context: Context) {
         private const val KEY = "config"
         private const val UNLOCKED = "unlocked"
         private const val PLUS_OFFERED = "plusOffered"
+        private const val PLUS_OFFERED_AT = "plusOfferedAt"
+        private const val PLUS_REMINDER_CLOSED = "plusReminderClosed"
         private const val SHARE_LOGINS = "shareLogins"
         private val json = Json { ignoreUnknownKeys = true }
     }
