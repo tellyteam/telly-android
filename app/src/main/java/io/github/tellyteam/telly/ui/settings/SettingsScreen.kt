@@ -137,8 +137,8 @@ fun SettingsScreen(
             Text(provider.name, fontSize = 17.sp, color = Telly.Text)
             Text(
                 when (provider) {
-                    is Provider.Xtream -> "Xtream Codes · ${provider.server}"
-                    is Provider.M3u -> "M3U playlist"
+                    is Provider.Xtream -> "Username and password · ${provider.server}"
+                    is Provider.M3u -> "Playlist link"
                 },
                 fontSize = 13.sp,
                 color = Telly.Muted,

@@ -94,7 +94,7 @@ internal fun SetupSteps(
                         PillButton("A server, username and password", primary = true, onClick = { onKind(true); trail.add(step); step = Step.SERVER }, modifier = Modifier.focusRequester(focus))
                         PillButton("A playlist link (M3U)", primary = false, onClick = { onKind(false); trail.add(step); step = Step.URL })
                     }
-                    Hint("Called Xtream Codes or an M3U playlist. Your details stay on this TV, and are sent only to your provider.")
+                    Hint("Your details stay on this TV, and are sent only to your provider.")
                     if (onBack != null) PillButton("Back", primary = false, onClick = onBack)
                 }
                 Step.SERVER -> Field("Server address", "As your provider gave it, with its port: for example example.com:8080.", server, KeyboardType.Uri, onServer, focus, ::next)

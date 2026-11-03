@@ -110,8 +110,8 @@ fun SetupScreen(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilterChip(selected = useXtream, onClick = { useXtream = true }, label = { Text("Xtream Codes") }, modifier = Modifier.focusRing())
-                FilterChip(selected = !useXtream, onClick = { useXtream = false }, label = { Text("M3U playlist") }, modifier = Modifier.focusRing())
+                FilterChip(selected = useXtream, onClick = { useXtream = true }, label = { Text("Username and password") }, modifier = Modifier.focusRing())
+                FilterChip(selected = !useXtream, onClick = { useXtream = false }, label = { Text("Playlist link") }, modifier = Modifier.focusRing())
             }
 
             TvTextField("Name (optional)", name, modifier = Modifier.fillMaxWidth()) { name = it }
