@@ -98,7 +98,7 @@ fun SyncSection(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(SyncCrypto.formatCode(config.code), fontSize = 26.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = Telly.Text)
                     Text(
-                        "Scan the QR code with your iPad's camera, or enter the code in Settings → Sync on your other devices. Keep it private: anyone with it can see what you've watched.",
+                        "Scan the QR code with your other device's camera, or enter the code in Settings → Sync on your other devices. Keep it private: anyone with it can see what you've watched.",
                         fontSize = 12.sp,
                         color = Telly.Faint,
                         modifier = Modifier.widthIn(max = 400.dp),
@@ -182,7 +182,13 @@ private fun PlusPanel(status: SyncStatus, onRefresh: suspend () -> Unit, onCheck
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Scan with your phone to get telly Plus", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
                     Text(
-                        "£4.99 a year, for every device in this household. Paddle takes the payment; telly turns on here once it's done.",
+                        "Free for 3 days, then £4.99 a year, for every device in this household. Paddle takes your card; you're not charged until the 3 days are up.",
+                        fontSize = 12.sp,
+                        color = Telly.Faint,
+                        modifier = Modifier.widthIn(max = 400.dp),
+                    )
+                    Text(
+                        "Already have telly Plus? Scan it too, and paste the transaction number from your Paddle receipt to move it here.",
                         fontSize = 12.sp,
                         color = Telly.Faint,
                         modifier = Modifier.widthIn(max = 400.dp),
@@ -190,7 +196,7 @@ private fun PlusPanel(status: SyncStatus, onRefresh: suspend () -> Unit, onCheck
                 }
             }
             else -> {
-                Text("Sync is part of telly Plus: £4.99 a year, for every device in this household.", fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.widthIn(max = 560.dp))
+                Text("Sync is part of telly Plus: free for 3 days, then £4.99 a year, for every device in this household. Already have it, from a TV you've reset? Get telly Plus lets you move it here too.", fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.widthIn(max = 560.dp))
                 PillButton(if (asking) "Getting a link…" else "Get telly Plus", primary = true, onClick = {
                     if (asking) return@PillButton
                     asking = true

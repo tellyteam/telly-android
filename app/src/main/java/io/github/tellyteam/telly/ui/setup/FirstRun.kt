@@ -192,7 +192,7 @@ fun PlusOfferScreen(checkout: suspend () -> String, refresh: suspend () -> Unit,
         FirstRunPage {
             Text("telly Plus", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Telly.Text)
             Text("Pick up where you left off on your other devices: your phone, tablet and other TVs.", fontSize = 18.sp, color = Telly.Muted)
-            Text("£4.99 a year, for every device in your household. Everything else in telly stays free.", fontSize = 16.sp, color = Telly.Text)
+            Text("Free for 3 days, then £4.99 a year, for every device in your household. Everything else in telly stays free.", fontSize = 16.sp, color = Telly.Text)
             val shown = link
             if (shown != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
