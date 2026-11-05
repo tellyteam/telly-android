@@ -56,7 +56,7 @@ class SyncSettings(context: Context) {
          * telly's relay: sync always uses it (a link saved with another one is moved to it). A debug
          * build can use a local one instead: `-PdevRelay=http://10.0.2.2:8787`.
          */
-        val RELAY = BuildConfig.DEV_RELAY.ifEmpty { "https://telly-sync.tellyteam.workers.dev" }
+        val RELAY = BuildConfig.DEV_RELAY.ifEmpty { "https://sync.gettelly.app" }
         private const val KEY = "config"
         private const val UNLOCKED = "unlocked"
         private const val PLUS_OFFERED = "plusOffered"
