@@ -710,7 +710,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Asks the relay about the household's telly Plus. */
     suspend fun refreshPlus() {
         val config = _sync.value.config ?: return
-        val plus = runCatching { container.syncClient.plus(config.relay, SyncCrypto.deriveKeys(config.code)) }.getOrNull() ?: return
+        val plus = runCatching { container.syncClient.plus(config.relay, SyncCrypto.deriveKeys(config.code), config.device) }.getOrNull() ?: return
         if (_sync.value.config != config) return
         val was = _sync.value.plus
         _sync.value = _sync.value.copy(plus = plus)

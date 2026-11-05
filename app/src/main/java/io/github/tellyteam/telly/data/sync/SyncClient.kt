@@ -44,9 +44,9 @@ class SyncClient(private val http: OkHttpClient) {
         send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/$device").put(body.toRequestBody(OCTETS)), keys)
     }
 
-    /** The household's telly Plus, from the relay. */
-    suspend fun plus(relay: String, keys: SyncCrypto.Keys): PlusStatus {
-        val o = Json.parseToJsonElement(send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/plus").get(), keys)) as? JsonObject
+    /** The household's telly Plus, from the relay: only told to one of its devices, or [device] if there's room for it to join. */
+    suspend fun plus(relay: String, keys: SyncCrypto.Keys, device: String): PlusStatus {
+        val o = Json.parseToJsonElement(send(Request.Builder().url("${base(relay)}/v1/${keys.mailbox}/$device/plus").get(), keys)) as? JsonObject
         return PlusStatus(
             until = (o?.get("until") as? JsonPrimitive)?.content?.toLongOrNull(),
             onSale = (o?.get("onSale") as? JsonPrimitive)?.content == "true",
