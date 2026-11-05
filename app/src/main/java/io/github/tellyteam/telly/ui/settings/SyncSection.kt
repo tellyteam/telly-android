@@ -160,10 +160,15 @@ private fun PlusPanel(status: SyncStatus, onRefresh: suspend () -> Unit, onCheck
     var asking by remember { mutableStateOf(false) }
     val plus = status.plus
     LaunchedEffect(status.config) { onRefresh() }
-    // While the QR code shows, the relay is asked every few seconds whether the payment's come through.
+    // While the QR code shows, the relay is asked whether the payment's come through (or telly Plus
+    // was moved here): every few seconds at first, then every half minute for as long as it's up.
     LaunchedEffect(link, plus?.until) {
         if (link == null || plus?.until != null) return@LaunchedEffect
-        repeat(120) { delay(5_000); onRefresh() }
+        var asked = 0
+        while (true) {
+            delay(if (asked++ < 120) 5_000 else 30_000)
+            onRefresh()
+        }
     }
     LaunchedEffect(plus?.until) { if (plus?.until != null) link = null }
 
