@@ -203,7 +203,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _sync = MutableStateFlow(SyncStatus(container.syncSettings.load()))
     val sync: StateFlow<SyncStatus> = _sync
 
-    /** Sync is a hidden feature for now: Settings shows it once unlocked, or while this device is linked. */
+    /** Settings → Sync shows unless hidden (seven presses on the version), and always while linked. */
     private val _syncUnlocked = MutableStateFlow(container.syncSettings.unlocked || _sync.value.config != null)
     val syncUnlocked: StateFlow<Boolean> = _syncUnlocked
 
@@ -696,20 +696,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val config = SyncConfig(normal, _sync.value.config?.device ?: SyncCrypto.newDeviceId(), SyncSettings.RELAY)
         container.syncSettings.save(config)
         _sync.value = SyncStatus(config)
-        val error = runSync(config)
-        refreshPlus()
-        // A household that needs telly Plus stays linked: it's bought from here, then syncs.
-        if (error != null && _sync.value.plus?.until == null && error == PlusNeededException().message) return null
+        val error = runSync(config)?.let {
+            // Only a household with telly Plus is joined: linking is never a step before buying.
+            if (it == PlusNeededException().message) "That household doesn't have telly Plus. Check the code, or get telly Plus here." else it
+        }
         if (error != null) {
             container.syncSettings.clear()
             _sync.value = SyncStatus(error = error)
+            return error
         }
-        return error
+        container.syncSettings.clearPending()
+        refreshPlus()
+        return null
     }
 
-    /** Asks the relay about the household's telly Plus. */
+    /** Asks the relay about the household's telly Plus, or about the one being bought for. */
     suspend fun refreshPlus() {
-        val config = _sync.value.config ?: return
+        val config = _sync.value.config ?: return linkPaid()
         val plus = runCatching { container.syncClient.plus(config.relay, SyncCrypto.deriveKeys(config.code), config.device) }.getOrNull() ?: return
         if (_sync.value.config != config) return
         val was = _sync.value.plus
@@ -720,12 +723,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * A checkout link for telly Plus, for this household. Throws a readable error. A TV with no
-     * household yet starts one first: telly Plus belongs to a household.
+     * household yet makes one for the purchase, out of sight: it's linked once it's paid for.
      */
     suspend fun plusCheckout(): String {
-        if (_sync.value.config == null) startSync(null)?.let { throw SyncException(it) }
-        val config = _sync.value.config ?: throw SyncException("Start syncing first.")
+        val config = _sync.value.config ?: container.syncSettings.loadPending()
+            ?: SyncConfig(SyncCrypto.newCode(), SyncCrypto.newDeviceId(), SyncSettings.RELAY).also { container.syncSettings.savePending(it) }
         return container.syncClient.checkout(config.relay, SyncCrypto.deriveKeys(config.code))
+    }
+
+    /** The household being bought for has telly Plus now: link it, and sync straight away. */
+    private suspend fun linkPaid() {
+        val pending = container.syncSettings.loadPending() ?: return
+        val plus = runCatching { container.syncClient.plus(pending.relay, SyncCrypto.deriveKeys(pending.code), pending.device) }.getOrNull() ?: return
+        if (plus.until == null || _sync.value.config != null) return
+        container.syncSettings.save(pending)
+        container.syncSettings.clearPending()
+        _sync.value = SyncStatus(pending, plus = plus)
+        _syncUnlocked.value = true
+        syncNow(force = true)
     }
 
     // ---- Joining, and telly Plus after the first watch ----
@@ -772,7 +787,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val plusReminder: StateFlow<Boolean> = _plusReminder
 
     // At launch: here, not in the first init, which runs before the line above.
-    init { checkPlusReminder() }
+    init {
+        checkPlusReminder()
+        // Paid on a phone while telly was closed: link the household now.
+        viewModelScope.launch { if (_sync.value.config == null) linkPaid() }
+    }
 
     /** Whether Home's reminder is due now (at launch, and coming back from the player). */
     fun checkPlusReminder() {

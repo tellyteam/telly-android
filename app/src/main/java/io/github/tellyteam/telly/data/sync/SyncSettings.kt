@@ -27,9 +27,25 @@ class SyncSettings(context: Context) {
         prefs.edit().putString(KEY, cipher.encrypt(json.encodeToString(SyncConfig.serializer(), config))).apply()
     }
 
-    /** Sync is hidden until unlocked (seven presses on the version in Settings → About). */
+    /**
+     * The household a TV is buying telly Plus for: made when it asks for a checkout link, and
+     * linked (moved to [save]) only once the relay confirms the payment. Until then it isn't shown.
+     */
+    fun loadPending(): SyncConfig? = prefs.getString(PENDING, null)?.let { stored ->
+        runCatching { json.decodeFromString(SyncConfig.serializer(), cipher.decrypt(stored)) }.getOrNull()
+    }?.takeIf { SyncCrypto.normaliseCode(it.code) != null }?.copy(relay = RELAY)
+
+    fun savePending(config: SyncConfig) {
+        prefs.edit().putString(PENDING, cipher.encrypt(json.encodeToString(SyncConfig.serializer(), config))).apply()
+    }
+
+    fun clearPending() {
+        prefs.edit().remove(PENDING).apply()
+    }
+
+    /** Settings → Sync shows; seven presses on the version in Settings → About hide it. */
     var unlocked: Boolean
-        get() = prefs.getBoolean(UNLOCKED, false)
+        get() = prefs.getBoolean(UNLOCKED, true)
         set(value) = prefs.edit().putBoolean(UNLOCKED, value).apply()
 
     /** telly Plus has been offered after the first watch: it isn't again. */
@@ -58,6 +74,7 @@ class SyncSettings(context: Context) {
          */
         val RELAY = BuildConfig.DEV_RELAY.ifEmpty { "https://sync.gettelly.app" }
         private const val KEY = "config"
+        private const val PENDING = "pending"
         private const val UNLOCKED = "unlocked"
         private const val PLUS_OFFERED = "plusOffered"
         private const val PLUS_OFFERED_AT = "plusOfferedAt"

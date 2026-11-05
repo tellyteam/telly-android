@@ -34,7 +34,10 @@ import io.github.tellyteam.telly.ui.theme.TvTextField
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Settings → Sync: link this device with a code, see when it last synced, or stop. */
+/**
+ * Settings → Sync. Sync is part of telly Plus, so it starts one of two ways: buying telly Plus (a
+ * household is made for it and linked once it's paid), or the code of a household that has it.
+ */
 @Composable
 fun SyncSection(
     status: SyncStatus,
@@ -66,7 +69,7 @@ fun SyncSection(
         }
     }
 
-    fun link(withCode: String?) {
+    fun link(withCode: String) {
         linking = true
         error = null
         scope.launch {
@@ -81,7 +84,8 @@ fun SyncSection(
     }
 
     val config = status.config
-    if (config != null) {
+    val plus = status.plus
+    if (config != null && plus?.until != null) {
         Text(
             when {
                 status.busy -> "Syncing now…"
@@ -91,6 +95,7 @@ fun SyncSection(
             fontSize = 13.sp,
             color = Telly.Text,
         )
+        Text("telly Plus is on for this household, until ${dayText(plus.until)}.", fontSize = 13.sp, color = Telly.Muted)
         status.error?.let { Text(it, fontSize = 13.sp, color = Telly.Faint) }
         if (showCode) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -106,17 +111,11 @@ fun SyncSection(
                 }
             }
         }
-        // The payment's QR code replaces the sync code's, so there's one to scan; focus moves to Sync now.
-        PlusPanel(status, onRefreshPlus, onCheckout, onLink = { showCode = false; runCatching { linkedFocus.requestFocus() } })
         FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PillButton(if (status.busy) "Syncing…" else "Sync now", primary = false, onClick = { if (!status.busy) onSyncNow() }, modifier = Modifier.focusRequester(linkedFocus))
             // Stays put and only changes its label, so focus never falls out to the menu.
             PillButton(if (showCode) "Hide code" else "Show code to link another device", primary = false, onClick = { showCode = !showCode })
-            PillButton(
-                if (confirmStop) "Press again to stop" else "Stop syncing on this device",
-                primary = false,
-                onClick = { if (confirmStop) { confirmStop = false; onStop() } else confirmStop = true },
-            )
+            StopButton(confirmStop, onAsk = { confirmStop = true }, onStop = { confirmStop = false; onStop() })
         }
         Text(
             "Provider logins are never shared: sign in on each device.",
@@ -127,18 +126,40 @@ fun SyncSection(
         return
     }
 
+    // Linked to a household without telly Plus (it ran out): its code stays hidden, and it's the
+    // same two choices as a device that's never synced, plus leaving the household.
+    val lapsed = config != null
+    if (lapsed && plus == null) {
+        Text("Checking this household's telly Plus…", fontSize = 13.sp, color = Telly.Text)
+        LaunchedEffect(config) { onRefreshPlus() }
+        return
+    }
+    // Paid on a phone from an earlier QR code: the household links as soon as the relay says so.
+    LaunchedEffect(Unit) { onRefreshPlus() }
+    if (lapsed) {
+        Text("Sync is off: this household's telly Plus has run out.", fontSize = 13.sp, color = Telly.Text)
+    } else {
+        Text(
+            "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never shared, and the relay keeps no logs.",
+            fontSize = 13.sp,
+            color = Telly.Muted,
+            modifier = Modifier.widthIn(max = 560.dp),
+        )
+    }
     Text(
-        "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never shared, and the relay keeps no logs.",
+        "Sync is part of telly Plus: free for 3 days, then £4.99 a year, for every device in your household.",
         fontSize = 13.sp,
-        color = Telly.Muted,
-        modifier = Modifier.widthIn(max = 560.dp),
+        color = Telly.Text,
+        modifier = Modifier.padding(top = 6.dp).widthIn(max = 560.dp),
     )
+    BuyPlus(status, onRefreshPlus, onCheckout, Modifier.focusRequester(if (lapsed) linkedFocus else unlinkedFocus))
     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-            PillButton(if (linking && !joining) "Starting…" else "Start syncing", primary = true, onClick = { if (!linking) link(null) }, modifier = Modifier.focusRequester(unlinkedFocus))
-            PillButton("I have a code", primary = false, onClick = { joining = !joining })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            PillButton("I already have telly Plus", primary = false, onClick = { joining = !joining })
+            if (lapsed) PillButton("Unlink this device", primary = false, onClick = { joining = false; onStop() })
         }
         if (joining) {
+            Text("Enter the code from Settings → Sync on one of your other devices.", fontSize = 13.sp, color = Telly.Muted)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 TvTextField("Code, e.g. ABCD-EFGH-JKMN-PQRS", code, KeyboardType.Ascii, modifier = Modifier.widthIn(max = 380.dp)) { code = it }
                 PillButton(if (linking) "Linking…" else "Link", primary = true, onClick = { if (!linking && code.isNotBlank()) link(code) })
@@ -148,65 +169,58 @@ fun SyncSection(
     }
 }
 
+@Composable
+private fun StopButton(confirming: Boolean, onAsk: () -> Unit, onStop: () -> Unit) {
+    PillButton(if (confirming) "Press again to stop" else "Stop syncing on this device", primary = false, onClick = { if (confirming) onStop() else onAsk() })
+}
+
 /**
- * The household's telly Plus: on (until when), or Get telly Plus. Buying happens on a phone: a QR
- * code opens Paddle's checkout for this household, and the TV waits for the relay to hear of it.
+ * Get telly Plus: a QR code opens Paddle's checkout on a phone, and the TV waits for the relay to
+ * hear of the payment. Linking happens by itself once it's paid.
  */
 @Composable
-private fun PlusPanel(status: SyncStatus, onRefresh: suspend () -> Unit, onCheckout: suspend () -> String, onLink: () -> Unit) {
+private fun BuyPlus(status: SyncStatus, onRefresh: suspend () -> Unit, onCheckout: suspend () -> String, modifier: Modifier) {
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var asking by remember { mutableStateOf(false) }
-    val plus = status.plus
-    LaunchedEffect(status.config) { onRefresh() }
-    // While the QR code shows, the relay is asked whether the payment's come through (or telly Plus
-    // was moved here): every few seconds at first, then every half minute for as long as it's up.
-    LaunchedEffect(link, plus?.until) {
-        if (link == null || plus?.until != null) return@LaunchedEffect
+    // While the QR code shows, the relay is asked whether the payment's come through: every few
+    // seconds at first, then every half minute for as long as it's up.
+    LaunchedEffect(link) {
+        if (link == null) return@LaunchedEffect
         var asked = 0
         while (true) {
             delay(if (asked++ < 120) 5_000 else 30_000)
             onRefresh()
         }
     }
-    LaunchedEffect(plus?.until) { if (plus?.until != null) link = null }
+    LaunchedEffect(status.plus?.until) { if (status.plus?.until != null) link = null }
 
     Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        when {
-            plus == null -> return@Column
-            plus.until != null -> Text("telly Plus is on for this household, until ${dayText(plus.until)}.", fontSize = 13.sp, color = Telly.Text)
-            !plus.onSale -> return@Column
-            link != null -> Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                QrCode(link!!, size = 150.dp)
+        val shown = link
+        if (shown != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                QrCode(shown, size = 150.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Scan with your phone to get telly Plus", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
                     Text(
-                        "Free for 3 days, then £4.99 a year, for every device in this household. Paddle takes your card; you're not charged until the 3 days are up.",
-                        fontSize = 12.sp,
-                        color = Telly.Faint,
-                        modifier = Modifier.widthIn(max = 400.dp),
-                    )
-                    Text(
-                        "Already have telly Plus? Scan it too, and paste the transaction number from your Paddle receipt to move it here.",
+                        "Free for 3 days, then £4.99 a year, for every device in your household. Paddle takes your card; you're not charged until the 3 days are up. Sync starts here as soon as it's done.",
                         fontSize = 12.sp,
                         color = Telly.Faint,
                         modifier = Modifier.widthIn(max = 400.dp),
                     )
                 }
             }
-            else -> {
-                Text("Sync is part of telly Plus: free for 3 days, then £4.99 a year, for every device in this household. Already have it, from a TV you've reset? Get telly Plus lets you move it here too.", fontSize = 13.sp, color = Telly.Muted, modifier = Modifier.widthIn(max = 560.dp))
-                PillButton(if (asking) "Getting a link…" else "Get telly Plus", primary = true, onClick = {
-                    if (asking) return@PillButton
-                    asking = true
-                    error = null
-                    scope.launch {
-                        try { link = onCheckout(); onLink() } catch (e: Exception) { error = e.message ?: "Couldn't get a link." }
-                        asking = false
-                    }
-                })
-            }
+        } else {
+            PillButton(if (asking) "Getting a link…" else "Get telly Plus", primary = true, modifier = modifier, onClick = {
+                if (asking) return@PillButton
+                asking = true
+                error = null
+                scope.launch {
+                    try { link = onCheckout() } catch (e: Exception) { error = e.message ?: "Couldn't get a link." }
+                    asking = false
+                }
+            })
         }
         error?.let { Text(it, fontSize = 13.sp, color = Telly.Accent) }
     }
