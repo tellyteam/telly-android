@@ -43,9 +43,9 @@ class SyncSettings(context: Context) {
         prefs.edit().remove(PENDING).apply()
     }
 
-    /** Settings → Sync shows; seven presses on the version in Settings → About hide it. */
+    /** Sync is hidden until unlocked (seven presses on the version in Settings → About). */
     var unlocked: Boolean
-        get() = prefs.getBoolean(UNLOCKED, true)
+        get() = prefs.getBoolean(UNLOCKED, false)
         set(value) = prefs.edit().putBoolean(UNLOCKED, value).apply()
 
     /** telly Plus has been offered after the first watch: it isn't again. */

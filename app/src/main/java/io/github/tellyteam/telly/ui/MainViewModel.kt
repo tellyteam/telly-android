@@ -203,7 +203,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _sync = MutableStateFlow(SyncStatus(container.syncSettings.load()))
     val sync: StateFlow<SyncStatus> = _sync
 
-    /** Settings → Sync shows unless hidden (seven presses on the version), and always while linked. */
+    /** Sync is a hidden feature for now: Settings shows it once unlocked, or while this device is linked. */
     private val _syncUnlocked = MutableStateFlow(container.syncSettings.unlocked || _sync.value.config != null)
     val syncUnlocked: StateFlow<Boolean> = _syncUnlocked
 
