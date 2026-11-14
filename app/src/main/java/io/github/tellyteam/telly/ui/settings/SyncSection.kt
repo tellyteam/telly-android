@@ -227,8 +227,11 @@ private fun BuyPlus(status: SyncStatus, onRefresh: suspend () -> Unit, onCheckou
 }
 
 /** A day count (days since 1970, as the relay keeps it) as a date, e.g. 2 November 2027. */
+// Not java.time: it isn't there before Android 8, and Fire OS 6 is Android 7.1.
 private fun dayText(day: Long): String =
-    java.time.LocalDate.ofEpochDay(day).format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.UK))
+    java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.UK)
+        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+        .format(java.util.Date(day * 86_400_000L))
 
 private fun ago(at: Long, now: Long = System.currentTimeMillis()): String {
     val minutes = (now - at) / 60_000

@@ -71,7 +71,7 @@ object SyncLocal {
             .mapValues { (_, p) -> SyncProgress(p.positionMs, p.durationMs, p.savedAt) }
 
         val history = LinkedHashMap<String, SyncEntry>()
-        local.history.forEach { h -> entryOf(h)?.let { e -> history.putIfAbsent(e.slot, e) } }
+        local.history.forEach { h -> entryOf(h)?.let { e -> history.getOrPut(e.slot) { e } } }
         local.removed.forEach { (slot, at) ->
             val e = removalOf(slot, at) ?: return@forEach
             if ((history[slot]?.at ?: -1) < at) history[slot] = e
@@ -107,7 +107,7 @@ object SyncLocal {
         val unsynced = mutableListOf<LastWatched>()
         local.history.filter { SyncParcel.keptAfterClear(it.savedAt, cleared) }.forEach { h ->
             val slot = h.syncSlot
-            if (slot == null) unsynced += h else bySlot.putIfAbsent(slot, h)
+            if (slot == null) unsynced += h else bySlot.getOrPut(slot) { h }
         }
         for (e in merged.history) {
             val mine = bySlot[e.slot]
