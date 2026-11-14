@@ -182,6 +182,8 @@ class PlayerActivity : ComponentActivity() {
 
     // ---- Keys ----
 
+    // Lint's RestrictedApi here is a known false alarm: it's Activity.dispatchKeyEvent we override.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         if (event.action == KeyEvent.ACTION_UP) {

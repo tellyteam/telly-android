@@ -1,5 +1,7 @@
 # Runs the unit tests, a debug build and an unsigned release build on every push and pull request.
 # The release build is the one R8 shrinks: its failures would otherwise first show up on a tag.
+# Lint fails the run on any call newer than minSdk (NewApi): Fire OS 6 is Android 7.1, and telly
+# 1.7.1–1.8.0 crashed there on java.time.
 name: CI
 
 on:
@@ -19,4 +21,4 @@ jobs:
           # Gradle's downloads and the dependencies, kept between runs in GitHub's own cache.
           cache: gradle
       - uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
-      - run: ./gradlew testDebugUnitTest assembleDebug assembleRelease
+      - run: ./gradlew testDebugUnitTest assembleDebug assembleRelease lintRelease
