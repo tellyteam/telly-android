@@ -42,6 +42,15 @@
             android:exported="false"
             android:theme="@style/Theme.Telly.Player" />
         <!-- Shares a downloaded update (in the app's cache) with Android's installer. -->
+        <!-- Mends telly's Fire TV home-screen tile, which Fire OS loses on every update. -->
+        <receiver
+            android:name=".data.update.FireTvTileRepair"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"
