@@ -625,7 +625,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // Still "when it was last watched", which orders Continue watching on every synced device.
                 now = entry.savedAt,
             )
-            if (fresh) Toast.makeText(getApplication(), "New episodes of ${entry.heading}", Toast.LENGTH_LONG).show()
         }
         for ((key, mark) in letGo) {
             val show = byId[key.removePrefix("series:")] ?: continue
@@ -645,7 +644,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 show.name, live = false, season.episodes, index,
                 seriesId = show.id, newEpisodes = fresh, toFront = false, now = mark.at,
             )
-            if (fresh) Toast.makeText(getApplication(), "New episodes of ${show.name}", Toast.LENGTH_LONG).show()
         }
         syncSoon()
     }
