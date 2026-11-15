@@ -1,5 +1,6 @@
 package io.github.tellyteam.telly.ui
 
+import io.github.tellyteam.telly.data.sync.PlusStatus
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,5 +22,13 @@ class PlusReminderTest {
         assertFalse("closed for good", plusReminderDue(offered + 9 * day, offered, closed = true, syncShown = true, hasPlus = false))
         assertFalse("already has it", plusReminderDue(offered + 9 * day, offered, closed = false, syncShown = true, hasPlus = true))
         assertFalse("Sync still hidden", plusReminderDue(offered + 9 * day, offered, closed = false, syncShown = false, hasPlus = false))
+    }
+
+    @Test
+    fun aLinkedHouseholdIsNotOfferedPlusUntilTheRelaySaysItHasNone() {
+        assertTrue("linked, not asked yet", mayHavePlus(linked = true, plus = null))
+        assertTrue("linked, has it", mayHavePlus(linked = true, plus = PlusStatus(until = 20_000, onSale = true)))
+        assertFalse("linked, ran out", mayHavePlus(linked = true, plus = PlusStatus(until = null, onSale = true)))
+        assertFalse("not linked", mayHavePlus(linked = false, plus = null))
     }
 }

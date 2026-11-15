@@ -66,6 +66,12 @@ val FIRST_WATCH_MS: Long = BuildConfig.DEV_FIRST_WATCH_SECONDS.toLongOrNull()?.t
 fun offersPlus(watchedMs: Long, syncShown: Boolean, hasPlus: Boolean, offeredBefore: Boolean): Boolean =
     watchedMs >= FIRST_WATCH_MS && syncShown && !hasPlus && !offeredBefore
 
+/**
+ * Whether this device may already have telly Plus, so it isn't offered: a linked household has it
+ * unless the relay has said otherwise. Not knowing yet (just started, relay out of reach) isn't "no".
+ */
+fun mayHavePlus(linked: Boolean, plus: PlusStatus?): Boolean = linked && (plus == null || plus.until != null)
+
 /** Days after telly Plus was first offered that Home shows its one reminder. */
 const val PLUS_REMINDER_DAYS = 3
 
@@ -768,6 +774,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val settings = container.syncSettings
         if (!offersPlus(System.currentTimeMillis() - opened, _syncUnlocked.value, _sync.value.plus?.until != null, settings.plusOffered)) return
         viewModelScope.launch {
+            // A linked household's telly Plus isn't asked about at launch: ask now, before offering it.
+            if (_sync.value.config != null) refreshPlus()
+            if (mayHavePlus(_sync.value.config != null, _sync.value.plus)) return@launch
             val onSale = _sync.value.plus?.onSale ?: container.syncClient.onSale(SyncSettings.RELAY)
             if (!onSale || settings.plusOffered) return@launch
             settings.plusOffered = true
@@ -787,14 +796,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // At launch: here, not in the first init, which runs before the line above.
     init {
         checkPlusReminder()
-        // Paid on a phone while telly was closed: link the household now.
-        viewModelScope.launch { if (_sync.value.config == null) linkPaid() }
+        viewModelScope.launch {
+            // Paid on a phone while telly was closed: link the household now. A linked one is asked
+            // about its telly Plus, so the reminder knows whether it's needed.
+            if (_sync.value.config == null) linkPaid() else refreshPlus()
+            checkPlusReminder()
+        }
     }
 
     /** Whether Home's reminder is due now (at launch, and coming back from the player). */
     fun checkPlusReminder() {
         val s = container.syncSettings
-        _plusReminder.value = plusReminderDue(System.currentTimeMillis(), s.plusOfferedAt, s.plusReminderClosed, _syncUnlocked.value, _sync.value.plus?.until != null)
+        _plusReminder.value = plusReminderDue(System.currentTimeMillis(), s.plusOfferedAt, s.plusReminderClosed, _syncUnlocked.value, mayHavePlus(_sync.value.config != null, _sync.value.plus))
     }
 
     /** The reminder's "See telly Plus": the same offer as after the first watch. */
