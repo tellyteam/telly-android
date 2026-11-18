@@ -22,13 +22,16 @@ class WatchProgressStore(private val context: Context, scope: String? = null) {
     /** Bumped on every save so screens can redraw progress bars. */
     val changes: StateFlow<Int> = _changes
 
-    /** [savedAt] is when it was saved (epoch ms; 0 for older records), so synced devices keep the newest. */
-    data class Progress(val positionMs: Long, val durationMs: Long, val savedAt: Long = 0) {
+    /**
+     * [savedAt] is when it was saved (epoch ms; 0 for older records), so synced devices keep the newest.
+     * [film] comes from the key, not what's stored: a film's credits count as watched sooner.
+     */
+    data class Progress(val positionMs: Long, val durationMs: Long, val savedAt: Long = 0, val film: Boolean = false) {
         val fraction: Float get() = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-        val finished: Boolean get() = PlaybackRules.watched(positionMs, durationMs)
+        val finished: Boolean get() = PlaybackRules.watched(positionMs, durationMs, film)
     }
 
-    fun get(streamUrl: String): Progress? = prefs.getString(key(streamUrl), null)?.let(::decode)
+    fun get(streamUrl: String): Progress? = key(streamUrl).let { k -> prefs.getString(k, null)?.let { decode(it, PlaybackRules.isFilm(k)) } }
 
     fun save(streamUrl: String, positionMs: Long, durationMs: Long, now: Long = System.currentTimeMillis()) {
         if (durationMs <= 0) return
@@ -38,7 +41,7 @@ class WatchProgressStore(private val context: Context, scope: String? = null) {
 
     /** Everything saved, by key (`series/123.mkv`), for sync. */
     fun all(): Map<String, Progress> =
-        prefs.all.mapNotNull { (k, v) -> (v as? String)?.let(::decode)?.let { k to it } }.toMap()
+        prefs.all.mapNotNull { (k, v) -> (v as? String)?.let { decode(it, PlaybackRules.isFilm(k)) }?.let { k to it } }.toMap()
 
     /** Forgets every position. */
     fun clear() {
@@ -55,7 +58,7 @@ class WatchProgressStore(private val context: Context, scope: String? = null) {
     fun markFinished(streamUrl: String, durationMs: Long) = save(streamUrl, durationMs, durationMs)
 
     /** Where to start: the saved position, unless barely started or already finished. */
-    fun resumePosition(streamUrl: String): Long = get(streamUrl).let { PlaybackRules.startAt(it?.positionMs, it?.durationMs) }
+    fun resumePosition(streamUrl: String): Long = get(streamUrl).let { PlaybackRules.startAt(it?.positionMs, it?.durationMs, it?.film == true) }
 
     companion object {
         /**
@@ -69,12 +72,13 @@ class WatchProgressStore(private val context: Context, scope: String? = null) {
 
         internal fun encode(p: Progress) = "${p.positionMs}/${p.durationMs}/${p.savedAt}"
 
-        internal fun decode(text: String): Progress? {
+        internal fun decode(text: String, film: Boolean = false): Progress? {
             val parts = text.split('/').takeIf { it.size >= 2 } ?: return null
             return Progress(
                 parts[0].toLongOrNull() ?: return null,
                 parts[1].toLongOrNull() ?: return null,
                 parts.getOrNull(2)?.toLongOrNull() ?: 0,
+                film,
             )
         }
     }

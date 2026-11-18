@@ -47,12 +47,12 @@ class PlaybackRulesTest {
 
     @Test
     fun watched() = each("watched") { c, name ->
-        assertEquals(name, c.bool("watched"), PlaybackRules.watched(c.long("positionMs"), c.long("durationMs")))
+        assertEquals(name, c.bool("watched"), PlaybackRules.watched(c.long("positionMs"), c.long("durationMs"), c.bool("film")))
     }
 
     @Test
     fun resume() = each("resume") { c, name ->
-        assertEquals(name, c.long("startAt"), PlaybackRules.startAt(c.getValue("positionMs").orNullLong(), c.getValue("durationMs").orNullLong()))
+        assertEquals(name, c.long("startAt"), PlaybackRules.startAt(c.getValue("positionMs").orNullLong(), c.getValue("durationMs").orNullLong(), c.bool("film")))
     }
 
     @Test

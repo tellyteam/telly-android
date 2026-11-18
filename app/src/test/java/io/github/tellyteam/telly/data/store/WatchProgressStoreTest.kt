@@ -33,4 +33,12 @@ class WatchProgressStoreTest {
         assertTrue(WatchProgressStore.Progress(2_580_000, 2_700_000).finished)
         assertFalse(WatchProgressStore.Progress(2_560_000, 2_700_000).finished)
     }
+
+    @Test
+    fun `a film's credits count from the last 10%`() {
+        // A two-hour film stopped as its 8 min 38 s of credits start: watched, though an episode wouldn't be.
+        assertTrue(WatchProgressStore.Progress(6_698_967, 7_216_864, film = true).finished)
+        assertFalse(WatchProgressStore.Progress(6_698_967, 7_216_864).finished)
+        assertTrue(WatchProgressStore.decode("6698967/7216864/1", film = true)!!.finished)
+    }
 }

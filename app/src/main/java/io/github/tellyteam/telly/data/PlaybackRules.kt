@@ -29,12 +29,19 @@ object PlaybackRules {
     /** Whether the next item starts when this one plays to its end. */
     fun advanceAtEnd(hasNext: Boolean, autoNext: Boolean, dismissed: Boolean) = hasNext && autoNext && !dismissed
 
-    /** Within its credits: the last minute or the last 5%, whichever is longer. */
-    fun watched(positionMs: Long, durationMs: Long) = durationMs - positionMs < maxOf(PROMPT_MS, durationMs / 20)
+    /**
+     * Within its credits: the last minute, or the last 5% of an episode and the last 10% of a film
+     * (a feature film's credits often run eight to twelve minutes), whichever is longer.
+     */
+    fun watched(positionMs: Long, durationMs: Long, film: Boolean) =
+        durationMs - positionMs < maxOf(PROMPT_MS, durationMs / if (film) 10 else 20)
+
+    /** Whether a progress key (`movie/123.mkv`) is a film's. */
+    fun isFilm(progressKey: String) = progressKey.startsWith("movie/")
 
     /** Where an item starts: its saved position, unless barely started or watched. */
-    fun startAt(positionMs: Long?, durationMs: Long?): Long {
-        if (positionMs == null || durationMs == null || positionMs < MIN_RESUME_MS || watched(positionMs, durationMs)) return 0
+    fun startAt(positionMs: Long?, durationMs: Long?, film: Boolean): Long {
+        if (positionMs == null || durationMs == null || positionMs < MIN_RESUME_MS || watched(positionMs, durationMs, film)) return 0
         return positionMs
     }
 
