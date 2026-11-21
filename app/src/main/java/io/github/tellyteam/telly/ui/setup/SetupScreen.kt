@@ -19,7 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -37,7 +39,10 @@ import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TellyWordmark
 import io.github.tellyteam.telly.ui.theme.TvTextField
 import io.github.tellyteam.telly.ui.theme.focusRing
+import io.github.tellyteam.telly.data.sync.SyncJoin
+import io.github.tellyteam.telly.ui.components.QrCode
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SetupScreen(
@@ -50,6 +55,16 @@ fun SetupScreen(
     onStopSync: (() -> Unit)? = null,
     /** On the first run, back to Welcome. */
     onBack: (() -> Unit)? = null,
+    /**
+     * Asks the relay what a phone sent to the first step's QR code. Null when no code shows, as
+     * when changing a saved provider.
+     */
+    collectJoin: (suspend (SyncJoin) -> SyncJoin.Message?)? = null,
+    /** Links with a link code a phone sent, where joining is offered (null elsewhere). Returns an error, or null. */
+    onLink: (suspend (String) -> String?)? = null,
+    /** Sent from a phone to the first run's join screen, for this screen to take once. */
+    received: SyncJoin.Message? = null,
+    onReceivedTaken: () -> Unit = {},
 ) {
     BackHandler(enabled = onCancel != null || onBack != null) { (onCancel ?: onBack)?.invoke() }
     val xtream = existing as? Provider.Xtream
@@ -64,6 +79,36 @@ fun SetupScreen(
     var confirmCleartext by remember { mutableStateOf(false) }
     LaunchedEffect(confirmCleartext) { if (confirmCleartext) { delay(6_000); confirmCleartext = false } }
     var showPassword by rememberSaveable { mutableStateOf(false) }
+
+    // Details from a phone: link with a code sent with them (where joining is offered), then fill
+    // in the summary to check. Nothing is saved, and the provider isn't contacted, until Connect.
+    val scope = rememberCoroutineScope()
+    var notice by remember { mutableStateOf<String?>(null) }
+    var linking by remember { mutableStateOf(false) }
+    var reviewRequest by remember { mutableIntStateOf(0) }
+    fun receive(m: SyncJoin.Message) {
+        notice = null
+        scope.launch {
+            val code = m.code
+            if (code != null && onLink != null) {
+                linking = true
+                notice = onLink(code)
+                linking = false
+            }
+            val p = m.provider ?: return@launch
+            useXtream = p is Provider.Xtream
+            name = p.name
+            server = (p as? Provider.Xtream)?.server ?: ""
+            username = (p as? Provider.Xtream)?.username ?: ""
+            password = (p as? Provider.Xtream)?.password ?: ""
+            url = (p as? Provider.M3u)?.url ?: ""
+            allowCleartext = p.allowCleartext
+            showPassword = false
+            reviewRequest++
+        }
+    }
+    LaunchedEffect(received) { received?.let { onReceivedTaken(); receive(it) } }
+    val join = collectJoin?.takeIf { existing == null }
 
     val canConnect = if (useXtream) server.isNotBlank() && username.isNotBlank() && password.isNotBlank() else url.isNotBlank()
 
@@ -81,7 +126,7 @@ fun SetupScreen(
     if (remember { DeviceKind.isTv(context) }) {
         SetupSteps(
             existing = existing,
-            useXtream = useXtream, onKind = { useXtream = it },
+            useXtream = useXtream, onKind = { useXtream = it; if (existing == null) name = "" },
             server = server, onServer = { server = it },
             username = username, onUsername = { username = it },
             password = password, onPassword = { password = it },
@@ -93,6 +138,13 @@ fun SetupScreen(
             onCancel = onCancel,
             onBack = onBack,
             onStopSync = onStopSync.takeIf { existing == null && onCancel == null },
+            name = name,
+            collectJoin = join,
+            linking = linking,
+            notice = notice,
+            reviewRequest = reviewRequest,
+            onReceive = ::receive,
+            onJoinError = { notice = it },
         )
         return
     }
@@ -113,6 +165,21 @@ fun SetupScreen(
                 FilterChip(selected = useXtream, onClick = { useXtream = true }, label = { Text("Username and password") }, modifier = Modifier.focusRing())
                 FilterChip(selected = !useXtream, onClick = { useXtream = false }, label = { Text("Playlist link") }, modifier = Modifier.focusRing())
             }
+            // Below the choices on a phone or tablet: the details may be on another device.
+            if (join != null) {
+                val code = rememberJoinCode("setup", active = !linking, collect = join, onMessage = ::receive, onError = { notice = it })
+                Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    QrCode(code.url, size = 120.dp)
+                    Text(
+                        if (linking) "Linking…" else "Details on another phone or computer? Scan this with it to enter them there, sealed so only this device can read them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            notice?.let { Text(it, color = Telly.Accent) }
+            if (reviewRequest > 0) Text("Sent from your other device: check the details, then connect.", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             TvTextField("Name (optional)", name, modifier = Modifier.fillMaxWidth()) { name = it }
             if (useXtream) {

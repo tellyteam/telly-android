@@ -99,14 +99,28 @@ class MainActivity : ComponentActivity() {
                             val firstRun = s.existing == null && sync.config == null
                             when {
                                 firstRun && step == "welcome" -> WelcomeScreen(canJoin = syncUnlocked, onSetUp = { step = "setup" }, onJoin = { step = "join" })
-                                firstRun && step == "join" -> JoinScreen(collect = vm::collectJoin, onLink = { vm.startSync(it) }, onSetUp = { step = "setup" }, onBack = { step = "welcome" })
-                                else -> SetupScreen(
-                                    existing = s.existing,
-                                    onConnect = vm::submitProvider,
-                                    onForget = if (s.existing != null) vm::forgetAttempt else null,
-                                    onStopSync = if (sync.config != null) vm::stopSync else null,
-                                    onBack = if (firstRun) ({ step = "welcome" }) else null,
+                                firstRun && step == "join" -> JoinScreen(
+                                    collect = vm::collectJoin,
+                                    onLink = { vm.startSync(it) },
+                                    onReceived = { vm.receive(it); step = "setup" },
+                                    onSetUp = { step = "setup" },
+                                    onBack = { step = "welcome" },
                                 )
+                                else -> {
+                                    val received by vm.received.collectAsStateWithLifecycle()
+                                    SetupScreen(
+                                        existing = s.existing,
+                                        onConnect = vm::submitProvider,
+                                        onForget = if (s.existing != null) vm::forgetAttempt else null,
+                                        onStopSync = if (sync.config != null) vm::stopSync else null,
+                                        onBack = if (firstRun) ({ step = "welcome" }) else null,
+                                        collectJoin = vm::collectJoin,
+                                        // Joining is offered where it is today: Sync shown, and not linked yet.
+                                        onLink = if (syncUnlocked && sync.config == null) ({ vm.startSync(it) }) else null,
+                                        received = received,
+                                        onReceivedTaken = vm::takeReceived,
+                                    )
+                                }
                             }
                         }
                         is UiState.Loading -> Centered {
@@ -123,11 +137,15 @@ class MainActivity : ComponentActivity() {
                             val form by vm.form.collectAsStateWithLifecycle()
                             val open = form
                             if (open != null) {
+                                val sync by vm.sync.collectAsStateWithLifecycle()
+                                val syncUnlocked by vm.syncUnlocked.collectAsStateWithLifecycle()
                                 SetupScreen(
                                     existing = open.editing?.provider,
                                     onConnect = vm::submitProvider,
                                     onForget = open.editing?.let { e -> { vm.removeProvider(e.id) } },
                                     onCancel = vm::closeForm,
+                                    collectJoin = vm::collectJoin,
+                                    onLink = if (syncUnlocked && sync.config == null) ({ vm.startSync(it) }) else null,
                                 )
                             } else {
                                 Browse(vm, s)

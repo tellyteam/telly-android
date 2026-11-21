@@ -1,6 +1,9 @@
 package io.github.tellyteam.telly.data
 
-/** Where the channel list comes from. Credentials never leave the device except to this provider. */
+/**
+ * Where the channel list comes from. Credentials go only to this provider, or to another of the
+ * user's devices when they send them (sealed in the relay's join box, SETUP-BY-PHONE.md); never synced.
+ */
 sealed interface Provider {
     val name: String
 
