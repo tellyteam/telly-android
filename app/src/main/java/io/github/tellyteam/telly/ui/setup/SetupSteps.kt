@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -30,6 +31,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.tellyteam.telly.data.Provider
+import io.github.tellyteam.telly.data.sync.SyncJoin
+import io.github.tellyteam.telly.ui.components.QrCode
 import io.github.tellyteam.telly.ui.home.PillButton
 import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TellyWordmark
@@ -59,6 +62,15 @@ internal fun SetupSteps(
     onCancel: (() -> Unit)?,
     onBack: (() -> Unit)?,
     onStopSync: (() -> Unit)?,
+    name: String,
+    /** Shows a QR code on the first step for a phone to send the details, asked about with this. */
+    collectJoin: (suspend (SyncJoin) -> SyncJoin.Message?)?,
+    linking: Boolean,
+    notice: String?,
+    /** Goes up each time a phone's details arrive: the summary shows them to check. */
+    reviewRequest: Int,
+    onReceive: (SyncJoin.Message) -> Unit,
+    onJoinError: (String) -> Unit,
 ) {
     var step by rememberSaveable { mutableStateOf(if (existing != null) Step.REVIEW else Step.KIND) }
     val trail = remember { mutableStateListOf<Step>() }
@@ -73,6 +85,15 @@ internal fun SetupSteps(
         go(order[order.indexOf(step) + 1])
     }
     fun change(s: Step) { fromReview = true; go(s) }
+    // Back from the summary returns to the first step, with a new code.
+    LaunchedEffect(reviewRequest) {
+        if (reviewRequest == 0) return@LaunchedEffect
+        trail.clear()
+        trail.add(Step.KIND)
+        fromReview = false
+        step = Step.REVIEW
+    }
+    val join = collectJoin?.let { rememberJoinCode("setup", active = step == Step.KIND && !linking, collect = it, onMessage = onReceive, onError = onJoinError) }
 
     BackHandler {
         if (trail.isNotEmpty()) { step = trail.removeAt(trail.lastIndex); fromReview = false }
@@ -89,12 +110,31 @@ internal fun SetupSteps(
                 Step.KIND -> {
                     Title("Add your provider")
                     if (onStopSync != null) Hint("This TV is linked with your other devices. Add your provider to pick up where you left off on them: the same one, signed in the same way.")
-                    Hint("What did your TV provider give you?")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PillButton("A server, username and password", primary = true, onClick = { onKind(true); trail.add(step); step = Step.SERVER }, modifier = Modifier.focusRequester(focus))
-                        PillButton("A playlist link (M3U)", primary = false, onClick = { onKind(false); trail.add(step); step = Step.URL })
+                    val choices = @Composable {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            PillButton("A server, username and password", primary = true, onClick = { onKind(true); trail.add(step); step = Step.SERVER }, modifier = Modifier.focusRequester(focus))
+                            PillButton("A playlist link (M3U)", primary = false, onClick = { onKind(false); trail.add(step); step = Step.URL })
+                        }
                     }
-                    Hint("Your details stay on this TV, and are sent only to your provider.")
+                    if (join == null) {
+                        Hint("What did your TV provider give you?")
+                        choices()
+                        Hint("Your details stay on this TV, and are sent only to your provider.")
+                    } else {
+                        // The code beside the choices. It isn't focusable, so the remote moves between the buttons as before.
+                        Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.width(196.dp)) {
+                                QrCode(join.url, size = 150.dp)
+                                Text(if (linking) "Linking…" else "Scan with your phone to enter your details there.", fontSize = 14.sp, color = Telly.Muted)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+                                Hint("Or enter what your TV provider gave you here:")
+                                choices()
+                            }
+                        }
+                        Hint("Typed here, your details stay on this TV and go only to your provider. Sent from your phone, they're sealed so only this TV can read them.")
+                    }
+                    notice?.let { Text(it, fontSize = 15.sp, color = Telly.Accent) }
                     if (onBack != null) PillButton("Back", primary = false, onClick = onBack)
                 }
                 Step.SERVER -> Field("Server address", "As your provider gave it, with its port: for example example.com:8080.", server, KeyboardType.Uri, onServer, focus, ::next)
@@ -103,6 +143,9 @@ internal fun SetupSteps(
                 Step.URL -> Field("Playlist address", "The M3U link your provider gave you.", url, KeyboardType.Uri, onUrl, focus, ::next)
                 Step.REVIEW -> {
                     Title(if (existing == null) "Check and connect" else "Your provider")
+                    if (reviewRequest > 0) Hint("Sent from your phone. Check the details, then connect: nothing is saved until you do.")
+                    notice?.let { Text(it, fontSize = 15.sp, color = Telly.Accent) }
+                    if (name.isNotBlank()) Detail("Name", name, null)
                     if (useXtream) {
                         Detail("Server", server) { change(Step.SERVER) }
                         Detail("Username", username) { change(Step.USERNAME) }
@@ -142,13 +185,13 @@ private fun Field(label: String, hint: String, value: String, type: KeyboardType
 }
 
 @Composable
-private fun Detail(label: String, value: String, onChange: () -> Unit) {
+private fun Detail(label: String, value: String, onChange: (() -> Unit)?) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f)) {
             Text(label, fontSize = 13.sp, color = Telly.Muted)
             Text(value, fontSize = 17.sp, color = Telly.Text)
         }
-        PillButton("Change", primary = false, onClick = onChange)
+        if (onChange != null) PillButton("Change", primary = false, onClick = onChange)
     }
 }
 

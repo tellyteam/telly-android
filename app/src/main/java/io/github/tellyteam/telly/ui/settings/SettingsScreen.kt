@@ -313,8 +313,8 @@ fun SettingsScreen(
         Section("About") {
             VersionLine(onSevenPresses = onToggleSyncUnlocked)
             Text(
-                "Plays your own IPTV subscription. Talks only to your provider and to GitHub to check for updates" +
-                    if (syncUnlocked) ", and to the sync relay if you turn on sync." else ".",
+                "Plays your own IPTV subscription. Talks only to your provider, to GitHub to check for updates, and to telly's relay " +
+                    if (syncUnlocked) "while a setup QR code shows or if you turn on sync." else "while a setup QR code shows.",
                 fontSize = 13.sp,
                 color = Telly.Muted,
             )

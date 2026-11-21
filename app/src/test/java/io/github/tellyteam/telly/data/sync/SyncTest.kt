@@ -10,6 +10,7 @@ import io.github.tellyteam.telly.data.syncIdentity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -288,13 +289,73 @@ class SyncBundleTest {
 }
 
 class SyncJoinTest {
+    private val link = "https://tv.gettelly.app/#id=00112233445566778899aabbccddeeff&key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    private val nonce = ByteArray(12) { (it + 1).toByte() }
+    private fun hex(s: String) = s.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
     /** PROTOCOL.md's join box, sealed the same way on every device. */
     @Test
     fun matchesTheSharedVector() {
         val join = SyncJoin.parse("telly://join?id=00112233445566778899aabbccddeeff&key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")!!
-        val box = join.seal("0123456789ABCDEF", ByteArray(12) { (it + 1).toByte() })
-        assertEquals("010102030405060708090a0b0c7ec839ba88f1d2bc6e9252752327df1e757bd8bfd52e1480e77d847a23a8054b9746a38ee4fdc41370785a", box.joinToString("") { "%02x".format(it) })
-        assertEquals("0123456789ABCDEF", join.open(box))
+        val box = join.seal("0123456789ABCDEF", nonce = nonce)
+        assertEquals("010102030405060708090a0b0c7ec839ba88f1d2bc6e9252752327df1e757bd8bfd52e1480e77d847a23a8054b9746a38ee4fdc41370785a", box.toHex())
+        assertEquals(SyncJoin.Message(code = "0123456789ABCDEF"), join.open(box))
+    }
+
+    /** SETUP-BY-PHONE.md's vector A: a provider alone. */
+    @Test
+    fun opensVectorA() {
+        val join = SyncJoin.parse(link)!!
+        val box = "010102030405060708090a0b0c7ec82aa783e299e229d0417d6b3181412c27c3c4b51524b7c43e9406b29418a4e981b9e54cf895bfe4fa98c9e7a89d2fe8933dc2eebb530957107ca10a2f57631a47331387c17fcc6967c31f895662cab8120a0a8f4cdcec58e6f77853894f51f3e4565fcf047d16d5a15293d9923ae0bae54bb4be0ed202164c83b2d9e959163a1370d08fa409c4f0c60f71f75a4cbbac013310a3aa08"
+        val provider = Provider.Xtream("My TV", "example.com:8080", "me", "p@ss wörd", allowCleartext = true)
+        assertEquals(SyncJoin.Message(provider = provider), join.open(hex(box)))
+        // Kotlin keeps the keys in the order written, so sealing reproduces the bytes too.
+        assertEquals(box, join.seal(provider = provider, nonce = nonce).toHex())
+    }
+
+    /** Vector B: a code and a playlist. */
+    @Test
+    fun opensVectorB() {
+        val join = SyncJoin.parse(link)!!
+        val box = "010102030405060708090a0b0c7ec839ba88f1d2bc6e9252752327df1e757bd8bfd52e1480e77dd506eec419b3ed80fead4c8f97bddbc5d481e7e1da30ad836dccf6f7571c535f36ef4d2d1679051129199d9929943b618a55d45d7bc6b0405c4dcc4a91ad55faff7854d04d10e2e4405fde28620a8295fd40ca846ca9e0f005e2b718fd1d16508cffebfa6ed7ea178a5377d65ad6f4018d"
+        val provider = Provider.M3u("", "https://example.com/list.m3u", allowCleartext = false)
+        assertEquals(SyncJoin.Message("0123456789ABCDEF", provider), join.open(hex(box)))
+        assertEquals(box, join.seal("0123456789ABCDEF", provider, nonce).toHex())
+    }
+
+    @Test
+    fun readsBothLinkForms() {
+        val new = SyncJoin.parse(link)!!
+        assertTrue(new.takesProvider)
+        assertEquals("00112233445566778899aabbccddeeff", new.id)
+        assertEquals(link, new.url)
+        val old = SyncJoin.parse("telly://join?id=00112233445566778899aabbccddeeff&key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")!!
+        assertFalse(old.takesProvider)
+        assertTrue(new.key.contentEquals(old.key))
+        // Either order, unknown parameters ignored, the id lowercased, the host in any case.
+        val loose = SyncJoin.parse("  HTTPS://TV.GetTelly.app/#v=2&key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&id=00112233445566778899AABBCCDDEEFF ")!!
+        assertEquals(new.id, loose.id)
+        assertTrue(loose.takesProvider)
+        assertEquals(new.id, SyncJoin.parse("telly://join?key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&id=00112233445566778899aabbccddeeff")?.id)
+        // A new join shows the new form.
+        assertTrue(SyncJoin.new().url.startsWith("https://tv.gettelly.app/#id="))
+    }
+
+    @Test
+    fun refusesAnythingElse() {
+        val key = "key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        val id = "id=00112233445566778899aabbccddeeff"
+        listOf(
+            "telly://sync?code=0123456789ABCDEF",
+            "http://tv.gettelly.app/#$id&$key",
+            "https://tv.gettelly.app/setup#$id&$key",
+            "https://tv.gettelly.app/?$id&$key",
+            "https://evil.example/#$id&$key",
+            "https://tv.gettelly.app.evil.example/#$id&$key",
+            "https://tv.gettelly.app/#$id",
+            "https://tv.gettelly.app/#id=0011&$key",
+            "https://tv.gettelly.app/#$id&key=AAECAwQ",
+        ).forEach { assertNull(it, SyncJoin.parse(it)) }
     }
 
     @Test
@@ -304,6 +365,62 @@ class SyncJoinTest {
         assertNull(SyncJoin.new().open(box))
         assertNull(SyncJoin(SyncJoin.new().id, join.key).open(box))
         assertEquals(join.id, SyncJoin.parse(join.url)?.id)
-        assertNull(SyncJoin.parse("telly://sync?code=0123456789ABCDEF"))
+    }
+
+    /** A plaintext sealed as a sender would, for the limits below. */
+    private fun opened(json: String): SyncJoin.Message? {
+        val join = SyncJoin.new()
+        return join.open(SyncCrypto.sealBox(join.key, "telly-join v1|${join.id}".toByteArray(), json, nonce))
+    }
+
+    private fun xtream(server: String = "example.com", username: String = "me", password: String = "pw", extra: String = "") =
+        """{"provider":{"kind":"xtream","server":"$server","username":"$username","password":"$password"$extra}}"""
+
+    @Test
+    fun keepsToTheLimits() {
+        // Names may be empty or missing; allowCleartext missing is off; unknown fields are ignored.
+        assertEquals(Provider.Xtream("", "example.com", "me", "pw", false), opened(xtream(extra = ""","colour":"red""""))?.provider)
+        // server, url and username are trimmed; the password is taken as it is.
+        assertEquals(Provider.Xtream("", "example.com:80", "me", " pw ", false), opened(xtream(" example.com:80 ", " me ", " pw "))?.provider)
+        assertEquals("a".repeat(255), (opened(xtream(server = "a".repeat(255)))?.provider as Provider.Xtream).server)
+        assertNull(opened(xtream(server = "a".repeat(256))))
+        assertNull(opened(xtream(username = "a".repeat(256))))
+        assertNull(opened(xtream(password = "a".repeat(256))))
+        assertNotNull(opened(xtream(password = "a".repeat(255))))
+        assertNotNull(opened(xtream(extra = ""","name":"${"n".repeat(60)}"""")))
+        assertNull(opened(xtream(extra = ""","name":"${"n".repeat(61)}"""")))
+        val url = "https://example.com/" + "u".repeat(2048 - 20)
+        assertEquals(url, (opened("""{"provider":{"kind":"m3u","url":"$url","allowCleartext":true}}""")?.provider as Provider.M3u).url)
+        assertNull(opened("""{"provider":{"kind":"m3u","url":"${url}u"}}"""))
+        // Wrong types, empty details, an unknown kind or a bad code make it unreadable.
+        assertNull(opened(xtream(extra = ""","allowCleartext":"true"""")))
+        assertNull(opened(xtream(server = " ")))
+        assertNull(opened(xtream(password = "")))
+        assertNull(opened("""{"provider":{"kind":"stalker","url":"https://example.com"}}"""))
+        assertNull(opened("""{"provider":"https://example.com"}"""))
+        assertNull(opened("""{"code":"nope","provider":{"kind":"m3u","url":"https://example.com"}}"""))
+        assertNull(opened("""{"code":12}"""))
+    }
+
+    @Test
+    fun needsACodeOrAProvider() {
+        assertNull(opened("{}"))
+        assertNull(opened("""{"colour":"red"}"""))
+        assertNull(opened("[]"))
+        assertNull(opened("not json"))
+        assertEquals(SyncJoin.Message(code = "0123456789ABCDEF"), opened("""{"code":"0123-4567-89ab-cdef"}"""))
+    }
+
+    @Test
+    fun sendsWhatTheTvTakes() {
+        val long = Provider.Xtream("n".repeat(80), " example.com ", " me ", "pw", false)
+        assertEquals(Provider.Xtream("n".repeat(60), "example.com", "me", "pw", false), SyncJoin.sendable(long))
+        assertNull(SyncJoin.sendable(long.copy(password = "p".repeat(256))))
+        assertNull(SyncJoin.sendable(Provider.M3u("", " ", false)))
+        // Sealed then opened, each combination arrives as it was sent.
+        val join = SyncJoin.new()
+        val p = Provider.M3u("Mine", "https://example.com/list.m3u", true)
+        assertEquals(SyncJoin.Message(provider = p), join.open(join.seal(provider = p)))
+        assertEquals(SyncJoin.Message("0123456789ABCDEF", p), join.open(join.seal("0123456789ABCDEF", p)))
     }
 }

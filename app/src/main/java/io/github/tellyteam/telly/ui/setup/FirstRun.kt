@@ -31,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.tellyteam.telly.BuildConfig
 import io.github.tellyteam.telly.data.sync.SyncJoin
 import io.github.tellyteam.telly.ui.DeviceKind
 import io.github.tellyteam.telly.ui.components.QrCode
@@ -67,7 +66,7 @@ fun WelcomeScreen(canJoin: Boolean, onSetUp: () -> Unit, onJoin: () -> Unit) {
         Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 "No ads, no accounts, no tracking.",
-                "Your login stays on this device.",
+                "Your login is never synced, and goes to another device only when you send it.",
                 "Pick up where you left off on your other devices.",
             ).forEach { Text("•  $it", fontSize = 16.sp, color = Telly.Text) }
         }
@@ -81,14 +80,20 @@ fun WelcomeScreen(canJoin: Boolean, onSetUp: () -> Unit, onJoin: () -> Unit) {
 }
 
 /**
- * Joining the household's other devices: this device shows a QR code for an iPhone or iPad in the
- * household to scan (nothing to type with a remote), or takes another device's code.
+ * Joining the household's other devices: this device shows a QR code for a phone or tablet in the
+ * household to scan (nothing to type with a remote), or takes another device's code. The phone can
+ * send a provider too: it goes on to setup's summary to check, held in memory only ([onReceived]).
  */
 @Composable
-fun JoinScreen(collect: suspend (SyncJoin) -> String?, onLink: suspend (String) -> String?, onSetUp: () -> Unit, onBack: () -> Unit) {
+fun JoinScreen(
+    collect: suspend (SyncJoin) -> SyncJoin.Message?,
+    onLink: suspend (String) -> String?,
+    onReceived: (SyncJoin.Message) -> Unit,
+    onSetUp: () -> Unit,
+    onBack: () -> Unit,
+) {
     BackHandler(onBack = onBack)
     val scope = rememberCoroutineScope()
-    var join by remember { mutableStateOf(SyncJoin.new()) }
     var typing by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
     var linking by remember { mutableStateOf(false) }
@@ -104,18 +109,19 @@ fun JoinScreen(collect: suspend (SyncJoin) -> String?, onLink: suspend (String) 
         }
     }
 
-    // While the QR code shows, the relay is asked every few seconds whether a code has been left.
-    LaunchedEffect(join) {
-        // Debug builds: the link, for playing the iPhone's side from a computer.
-        if (BuildConfig.DEBUG) android.util.Log.d("telly", "join QR: ${join.url}")
-        repeat(300) {
-            delay(3_000)
-            if (linking) return@repeat
-            val found = try { collect(join) } catch (e: Exception) { error = e.message; join = SyncJoin.new(); return@LaunchedEffect }
-            if (found != null) { link(found); return@LaunchedEffect }
-        }
-        join = SyncJoin.new()
-    }
+    // While the QR code shows, the relay is asked every 3 seconds whether anything has been left.
+    // A link code alone links here; a provider (with or without a code) goes to setup, which links
+    // with the code first and then shows the provider's summary to check.
+    val join = rememberJoinCode(
+        label = "join",
+        active = !linking,
+        collect = collect,
+        onMessage = { m ->
+            val withCode = m.code
+            if (m.provider != null) onReceived(m) else if (withCode != null) link(withCode)
+        },
+        onError = { error = it },
+    )
 
     FirstRunPage {
         Text("Join your other devices", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Telly.Text)
@@ -124,7 +130,7 @@ fun JoinScreen(collect: suspend (SyncJoin) -> String?, onLink: suspend (String) 
             QrCode(join.url, size = 170.dp)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                 Text(
-                    "On your iPhone or iPad, open telly and go to Settings → Sync → Scan a new device's QR code.",
+                    "On your iPhone or iPad, open telly and go to Settings → Set up a TV. It can send your provider's details too, so there's nothing to type here.",
                     fontSize = 16.sp,
                     color = Telly.Muted,
                 )
@@ -144,7 +150,11 @@ fun JoinScreen(collect: suspend (SyncJoin) -> String?, onLink: suspend (String) 
             }
         }
         error?.let { Text(it, fontSize = 14.sp, color = Telly.Accent) }
-        Text("Provider logins are never shared: you'll sign in on this device next.", fontSize = 13.sp, color = Telly.Faint)
+        Text(
+            "Provider logins aren't part of syncing. Send yours from your phone when you link, sealed so only this device can read it, or sign in on this device next.",
+            fontSize = 13.sp,
+            color = Telly.Faint,
+        )
     }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 }

@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
+import io.github.tellyteam.telly.data.Provider
 import java.io.IOException
 
 open class SyncException(message: String) : IOException(message)
@@ -68,8 +69,8 @@ class SyncClient(private val http: OkHttpClient) {
         }.getOrNull() ?: false
     }
 
-    /** The link code another device left in [join]'s box, once; null while it's still empty. Needs no token. */
-    suspend fun collectJoin(relay: String, join: SyncJoin): String? = withContext(Dispatchers.IO) {
+    /** What another device left in [join]'s box, once; null while it's still empty. Needs no token. */
+    suspend fun collectJoin(relay: String, join: SyncJoin): SyncJoin.Message? = withContext(Dispatchers.IO) {
         val response = try {
             http.newCall(Request.Builder().url("${base(relay)}/v1/join/${join.id}").header("Cache-Control", "no-store").build()).execute()
         } catch (e: IOException) {
@@ -77,8 +78,25 @@ class SyncClient(private val http: OkHttpClient) {
         }
         response.use {
             if (it.code != 200) return@withContext null
-            val body = ((Json.parseToJsonElement(it.body?.string().orEmpty()) as? JsonObject)?.get("body") as? JsonPrimitive)?.content
-            body?.let(Base64Text::decode)?.let(join::open) ?: throw SyncException("That code couldn't be read. Scan the QR code again.")
+            val body = runCatching { ((Json.parseToJsonElement(it.body?.string().orEmpty()) as? JsonObject)?.get("body") as? JsonPrimitive)?.content }.getOrNull()
+            body?.let(Base64Text::decode)?.let(join::open) ?: throw SyncException("That couldn't be read. Scan the code again.")
+        }
+    }
+
+    /** Leaves a link code, a provider or both for the device showing [join]'s code. Needs no token: the box's id is its address. */
+    suspend fun sendJoin(relay: String, join: SyncJoin, code: String?, provider: Provider?) = withContext(Dispatchers.IO) {
+        val box = join.seal(code, provider)
+        val request = Request.Builder().url("${base(relay)}/v1/join/${join.id}").header("Cache-Control", "no-store").put(box.toRequestBody(OCTETS)).build()
+        val response = try {
+            http.newCall(request).execute()
+        } catch (e: IOException) {
+            throw SyncException("Couldn't reach the sync relay.")
+        }
+        response.use {
+            when {
+                it.code == 409 -> throw SyncException("That TV's code has already been used. Show its QR code again for a new one.")
+                !it.isSuccessful -> throw SyncException("The sync relay answered ${it.code}.")
+            }
         }
     }
 

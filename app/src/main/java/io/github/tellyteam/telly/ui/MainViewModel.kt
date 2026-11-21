@@ -749,8 +749,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Joining, and telly Plus after the first watch ----
 
-    /** The link code an iPhone or iPad left for this TV's join QR code, once; null while there's none yet. */
-    suspend fun collectJoin(join: SyncJoin): String? = container.syncClient.collectJoin(SyncSettings.RELAY, join)
+    /** What a phone left for one of this device's join QR codes, once; null while there's nothing yet. */
+    suspend fun collectJoin(join: SyncJoin): SyncJoin.Message? = container.syncClient.collectJoin(SyncSettings.RELAY, join)
+
+    /**
+     * A provider (and perhaps a link code) a phone sent to the first run's join screen, on its way
+     * to setup's summary. Held in memory only, never saved, and taken once.
+     */
+    private val _received = MutableStateFlow<SyncJoin.Message?>(null)
+    val received: StateFlow<SyncJoin.Message?> = _received
+
+    fun receive(message: SyncJoin.Message) {
+        _received.value = message
+    }
+
+    fun takeReceived() {
+        _received.value = null
+    }
 
     private var playerOpenedAt: Long? = null
 
