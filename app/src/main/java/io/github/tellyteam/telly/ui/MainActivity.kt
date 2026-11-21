@@ -139,6 +139,7 @@ class MainActivity : ComponentActivity() {
                             if (open != null) {
                                 val sync by vm.sync.collectAsStateWithLifecycle()
                                 val syncUnlocked by vm.syncUnlocked.collectAsStateWithLifecycle()
+                                val received by vm.received.collectAsStateWithLifecycle()
                                 SetupScreen(
                                     existing = open.editing?.provider,
                                     onConnect = vm::submitProvider,
@@ -146,6 +147,9 @@ class MainActivity : ComponentActivity() {
                                     onCancel = vm::closeForm,
                                     collectJoin = vm::collectJoin,
                                     onLink = if (syncUnlocked && sync.config == null) ({ vm.startSync(it) }) else null,
+                                    // A provider sent to Settings → Sync's Scan to link, to check here.
+                                    received = if (open.editing == null) received else null,
+                                    onReceivedTaken = vm::takeReceived,
                                 )
                             } else {
                                 Browse(vm, s)
@@ -303,6 +307,8 @@ class MainActivity : ComponentActivity() {
                         onStopSync = vm::stopSync,
                         onRefreshPlus = vm::refreshPlus,
                         onPlusCheckout = vm::plusCheckout,
+                        onCollectJoin = vm::collectJoin,
+                        onReceivedProvider = { vm.receive(it); vm.openForm() },
                         onClearProgress = {
                             vm.clearProgress()
                             Toast.makeText(this@MainActivity, "Watch progress cleared", Toast.LENGTH_SHORT).show()

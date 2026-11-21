@@ -24,11 +24,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import io.github.tellyteam.telly.data.Provider
 import io.github.tellyteam.telly.data.sync.SyncCrypto
+import io.github.tellyteam.telly.data.sync.SyncJoin
 import io.github.tellyteam.telly.data.sync.SyncLink
 import io.github.tellyteam.telly.ui.components.QrCode
 import io.github.tellyteam.telly.ui.SyncStatus
 import io.github.tellyteam.telly.ui.home.PillButton
+import io.github.tellyteam.telly.ui.setup.rememberJoinCode
 import io.github.tellyteam.telly.ui.theme.Telly
 import io.github.tellyteam.telly.ui.theme.TvTextField
 import kotlinx.coroutines.delay
@@ -36,7 +39,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Settings → Sync. Sync is part of telly Plus, so it starts one of two ways: buying telly Plus (a
- * household is made for it and linked once it's paid), or the code of a household that has it.
+ * household is made for it and linked once it's paid), or the code of a household that has it:
+ * typed, or sent from telly on an iPhone or iPad that scans this device's join QR code (Scan to
+ * link, the first run's code here too).
  */
 @Composable
 fun SyncSection(
@@ -46,6 +51,10 @@ fun SyncSection(
     onStop: () -> Unit,
     onRefreshPlus: suspend () -> Unit,
     onCheckout: suspend () -> String,
+    onCollectJoin: suspend (SyncJoin) -> SyncJoin.Message?,
+    /** Whether this device already has [Provider] (by its sync identity). */
+    hasProvider: (Provider) -> Boolean,
+    onReceivedProvider: (SyncJoin.Message) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var joining by remember { mutableStateOf(false) }
@@ -82,6 +91,26 @@ fun SyncSection(
             }
         }
     }
+
+    // Scan to link takes whatever a phone sends, as every QR code telly shows does: a link code links;
+    // a provider this device doesn't have goes to Add provider, filled in to check (which links with
+    // the code first, if one came too); one it has already is left alone.
+    var scanning by remember { mutableStateOf(false) }
+    val scanJoin = rememberJoinCode(
+        "settings join",
+        active = scanning && !linking,
+        collect = onCollectJoin,
+        onMessage = { m ->
+            val p = m.provider
+            val c = m.code
+            when {
+                p != null && !hasProvider(p) -> { scanning = false; onReceivedProvider(m) }
+                c != null -> { scanning = false; link(c) }
+                else -> error = "This device already has that provider. To link it, send it from a phone with telly Plus."
+            }
+        },
+        onError = { error = it },
+    )
 
     val config = status.config
     val plus = status.plus
@@ -155,8 +184,25 @@ fun SyncSection(
     BuyPlus(status, onRefreshPlus, onCheckout, Modifier.focusRequester(if (lapsed) linkedFocus else unlinkedFocus))
     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            PillButton("I already have telly Plus", primary = false, onClick = { joining = !joining })
-            if (lapsed) PillButton("Unlink this device", primary = false, onClick = { joining = false; onStop() })
+            // Stays put and only changes its label, so focus never falls out to the menu.
+            PillButton(if (scanning) "Hide QR code" else "Scan to link", primary = false, onClick = { scanning = !scanning; joining = false; error = null })
+            PillButton("I already have telly Plus", primary = false, onClick = { joining = !joining; scanning = false })
+            if (lapsed) PillButton("Unlink this device", primary = false, onClick = { joining = false; scanning = false; onStop() })
+        }
+        if (scanning) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                QrCode(scanJoin.url, size = 150.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Scan with telly on your phone or tablet", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Telly.Text)
+                    Text(
+                        "In telly on it, go to Settings → Set up a TV and scan this. It links this device to your household's telly Plus, and can send a provider it doesn't have yet, with nothing to type.",
+                        fontSize = 13.sp,
+                        color = Telly.Muted,
+                        modifier = Modifier.widthIn(max = 420.dp),
+                    )
+                    Text(if (linking) "Linking…" else "Waiting for your phone…", fontSize = 13.sp, color = Telly.Faint)
+                }
+            }
         }
         if (joining) {
             Text("Enter the code from Settings → Sync on one of your other devices.", fontSize = 13.sp, color = Telly.Muted)
