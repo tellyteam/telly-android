@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import io.github.tellyteam.telly.data.sync.SyncJoin
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,7 +83,23 @@ fun SettingsScreen(
     onRefreshPlus: suspend () -> Unit,
     onPlusCheckout: suspend () -> String,
     onClearProgress: () -> Unit,
+    /**
+     * Sends a link code and/or a provider to a TV that's showing its QR code. Null on a TV: only a
+     * phone or tablet has the scanner.
+     */
+    onSendToTv: (suspend (join: SyncJoin, link: Boolean, providerId: String?) -> Unit)? = null,
 ) {
+    var settingUpTv by rememberSaveable { mutableStateOf(false) }
+    if (settingUpTv && onSendToTv != null) {
+        SetUpTvScreen(
+            // Linking another device is offered where it is today: Sync shown, linked, with telly Plus.
+            canLink = syncUnlocked && sync.config != null && sync.plus?.until != null,
+            providers = providers,
+            onSend = onSendToTv,
+            onClose = { settingUpTv = false },
+        )
+        return
+    }
     var managing by rememberSaveable { mutableStateOf<CategoryKind?>(null) }
     managing?.let { kind ->
         CategoryManager(
@@ -166,6 +183,18 @@ fun SettingsScreen(
                     onClick = { if (confirmRemove) onRemoveProvider() else confirmRemove = true },
                 )
                 PillButton("Add another provider", primary = false, onClick = onAddProvider)
+            }
+        }
+
+        if (onSendToTv != null) {
+            Section("Set up a TV") {
+                Text(
+                    "Scan the QR code on a TV that's setting up telly, to link it and send it a provider: nothing to type with the remote.",
+                    fontSize = 13.sp,
+                    color = Telly.Muted,
+                    modifier = Modifier.widthIn(max = 560.dp),
+                )
+                PillButton("Scan the TV's code", primary = false, onClick = { settingUpTv = true }, modifier = Modifier.padding(top = 12.dp))
             }
         }
 

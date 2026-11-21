@@ -307,6 +307,7 @@ class MainActivity : ComponentActivity() {
                             vm.clearProgress()
                             Toast.makeText(this@MainActivity, "Watch progress cleared", Toast.LENGTH_SHORT).show()
                         },
+                        onSendToTv = if (DeviceKind.isTouch(this@MainActivity)) vm::sendToTv else null,
                     )
                     Destination.SERIES -> {
                         val groups = remember(series, arrangement) {

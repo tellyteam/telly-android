@@ -767,6 +767,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _received.value = null
     }
 
+    /**
+     * Settings → Set up a TV: leaves this household's link code ([link]) and/or a saved provider in
+     * a TV's join box. The provider's login is read from the store only now. Throws a readable error.
+     */
+    suspend fun sendToTv(join: SyncJoin, link: Boolean, providerId: String?) {
+        val code = if (link) _sync.value.config?.code ?: throw SyncException("This device isn't linked for sync any more.") else null
+        val provider = providerId?.let { id ->
+            val saved = container.providerStore.loadAll().firstOrNull { it.id == id }?.provider ?: throw SyncException("That provider has been removed.")
+            SyncJoin.sendable(saved) ?: throw SyncException("That provider's details are too long to send to a TV.")
+        }
+        if (code == null && provider == null) throw SyncException("Choose what to send.")
+        container.syncClient.sendJoin(SyncSettings.RELAY, join, code, provider)
+    }
+
     private var playerOpenedAt: Long? = null
 
     /** Set once, after the first proper watch: telly Plus is offered over Home. */

@@ -130,7 +130,7 @@ fun JoinScreen(
             QrCode(join.url, size = 170.dp)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                 Text(
-                    "On your iPhone or iPad, open telly and go to Settings → Set up a TV. It can send your provider's details too, so there's nothing to type here.",
+                    "On your phone or tablet, open telly and go to Settings → Set up a TV. It can send your provider's details too, so there's nothing to type here.",
                     fontSize = 16.sp,
                     color = Telly.Muted,
                 )

@@ -4,6 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Lets telly hand a downloaded update to Android's installer, which always asks the user. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Settings → Set up a TV on a phone or tablet scans the TV's QR code. Asked for only when the
+         scanner opens; no camera is needed to install telly (TVs have none). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
 
     <!-- Runs on Android TV and on phones/tablets; neither a touchscreen nor Leanback is required. -->
     <uses-feature
