@@ -48,7 +48,7 @@ Install **Downloader** from Google Play, allow it to install unknown apps
   telly's relay while a setup QR code shows (or if you turn on sync). No accounts, analytics,
   adverts or tracking.
 - It never reads device identifiers or starts at boot, and never installs anything without asking.
-- Your provider login is encrypted on the device with an Android Keystore key. It's never synced.
+- Your provider login is encrypted on the device with an Android Keystore key. It's never part of sync.
 - Setup shows a QR code so the details can be typed on a phone instead of with the remote. Sent from
   the phone, they're sealed with a key that's only in the QR code, so only this TV can read them;
   telly's relay holds them for at most ten minutes and can't open them. They're shown for you to

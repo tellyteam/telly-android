@@ -118,7 +118,7 @@ fun SyncSection(
             StopButton(confirmStop, onAsk = { confirmStop = true }, onStop = { confirmStop = false; onStop() })
         }
         Text(
-            "Provider logins are never synced: sign in on each device, or send one from your phone to a TV that's setting up.",
+            "Provider logins are never part of sync: sign in on each device, or send one from your phone to a TV that's setting up.",
             fontSize = 13.sp,
             color = Telly.Muted,
             modifier = Modifier.padding(top = 16.dp).widthIn(max = 560.dp),
@@ -140,7 +140,7 @@ fun SyncSection(
         Text("Sync is off: this household's telly Plus has run out.", fontSize = 13.sp, color = Telly.Text)
     } else {
         Text(
-            "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never synced, and the relay keeps no logs.",
+            "Pick up where you left off on your other devices. Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins are never part of sync, and the relay keeps no logs.",
             fontSize = 13.sp,
             color = Telly.Muted,
             modifier = Modifier.widthIn(max = 560.dp),
