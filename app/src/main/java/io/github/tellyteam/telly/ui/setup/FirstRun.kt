@@ -66,7 +66,7 @@ fun WelcomeScreen(canJoin: Boolean, onSetUp: () -> Unit, onJoin: () -> Unit) {
         Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 "No ads, no accounts, no tracking.",
-                "Your login is never synced, and goes to another device only when you send it.",
+                "Your login is never part of sync, and goes to another device only when you send it.",
                 "Pick up where you left off on your other devices.",
             ).forEach { Text("•  $it", fontSize = 16.sp, color = Telly.Text) }
         }
@@ -151,7 +151,7 @@ fun JoinScreen(
         }
         error?.let { Text(it, fontSize = 14.sp, color = Telly.Accent) }
         Text(
-            "Provider logins aren't part of syncing. Send yours from your phone when you link, sealed so only this device can read it, or sign in on this device next.",
+            "Provider logins are never part of sync. Send yours from your phone when you link, sealed so only this device can read it, or sign in on this device next.",
             fontSize = 13.sp,
             color = Telly.Faint,
         )
