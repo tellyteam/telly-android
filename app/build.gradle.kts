@@ -121,8 +121,12 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    // QR codes for linking sync (encoding only; Apache-2.0)
+    // QR codes: drawing them, and reading them in "Set up a TV" on phones and tablets (Apache-2.0)
     implementation(libs.zxing.core)
+    // The camera for that scanner. No Google Play services or ML Kit, so it works on Fire tablets.
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
 
     testImplementation(libs.junit)
 }

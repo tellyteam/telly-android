@@ -53,6 +53,9 @@ Install **Downloader** from Google Play, allow it to install unknown apps
   the phone, they're sealed with a key that's only in the QR code, so only this TV can read them;
   telly's relay holds them for at most ten minutes and can't open them. They're shown for you to
   check, and nothing is saved until you press Connect.
+- On a phone or tablet, **Settings → Set up a TV** scans a TV's QR code with the camera (asked for
+  only then) to link the TV and, if you turn it on, send it a provider. Nothing is sent until you
+  choose what and press Send; the password is never shown.
 - Plain HTTP is refused unless you allow it for your provider (some providers have no HTTPS).
 
 ## Building from source
