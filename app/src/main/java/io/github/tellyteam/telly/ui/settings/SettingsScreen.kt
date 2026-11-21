@@ -28,6 +28,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import io.github.tellyteam.telly.data.sync.SyncJoin
+import io.github.tellyteam.telly.data.syncIdentity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,6 +83,10 @@ fun SettingsScreen(
     onStopSync: () -> Unit,
     onRefreshPlus: suspend () -> Unit,
     onPlusCheckout: suspend () -> String,
+    /** What a phone left for a join QR code shown here (Scan to link), once; null while there's nothing. */
+    onCollectJoin: suspend (SyncJoin) -> SyncJoin.Message?,
+    /** A provider (and perhaps a link code) sent to Scan to link that this device doesn't have: on to Add provider. */
+    onReceivedProvider: (SyncJoin.Message) -> Unit,
     onClearProgress: () -> Unit,
     /**
      * Sends a link code and/or a provider to a TV that's showing its QR code. Null on a TV: only a
@@ -238,7 +243,11 @@ fun SettingsScreen(
 
         if (syncUnlocked) {
             Section("Sync") {
-                SyncSection(sync, onStartSync, onSyncNow, onStopSync, onRefreshPlus, onPlusCheckout)
+                SyncSection(
+                    sync, onStartSync, onSyncNow, onStopSync, onRefreshPlus, onPlusCheckout, onCollectJoin,
+                    hasProvider = { p -> providers.any { it.provider.syncIdentity == p.syncIdentity } },
+                    onReceivedProvider = onReceivedProvider,
+                )
             }
         }
 
