@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -31,10 +32,14 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import io.github.tellyteam.telly.container
 import io.github.tellyteam.telly.data.Channel
+import io.github.tellyteam.telly.data.DeviceHealth
+import io.github.tellyteam.telly.data.StallAdvice
 import java.util.concurrent.TimeUnit
 import io.github.tellyteam.telly.data.PlaybackRules
 import io.github.tellyteam.telly.data.PlaybackSettings
@@ -87,6 +92,19 @@ class PlayerActivity : ComponentActivity() {
     private var recorded = false
     private var lastPositionMs = 0L
     private var lastDurationMs = C.TIME_UNSET
+
+    /**
+     * Stalls (StallAdvice): when the current one began, whether this stream has played since it was
+     * (re)started, when it last became ready, and reconnections in a row. Elapsed-realtime ms.
+     */
+    private var stalledSince: Long? = null
+    private var playedThisStream = false
+    private var readySince: Long? = null
+    private var reconnects = 0
+    /** Frames the decoder dropped, with when, for the last half minute: a device that can't keep up. */
+    private val dropped = ArrayDeque<Pair<Long, Int>>()
+    /** ExoPlayer's own speed estimate (the builder's default meter is this one). */
+    private val bandwidth by lazy { DefaultBandwidthMeter.getSingletonInstance(this) }
 
     private val actions = PlayerActions(
         playPause = { player?.let { it.playWhenReady = !it.playWhenReady }; resetHide() },
@@ -155,6 +173,11 @@ class PlayerActivity : ComponentActivity() {
             .build()
         p.trackSelectionParameters = SubtitlePreference.parameters(p.trackSelectionParameters, container.subtitles.language)
         p.addListener(listener)
+        p.addAnalyticsListener(object : AnalyticsListener {
+            override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+                dropped.addLast(SystemClock.elapsedRealtime() to droppedFrames)
+            }
+        })
         playerView.player = p
         player = p
         if (live) {
@@ -358,10 +381,12 @@ class PlayerActivity : ComponentActivity() {
         DefaultMediaSourceFactory(OkHttpDataSource.Factory(container.http.newBuilder().readTimeout(waitSecs, TimeUnit.SECONDS).build()))
             .createMediaSource(mediaItem(item))
 
-    private fun playLive(newIndex: Int, announce: Boolean, waitSecs: Long = LIVE_WAIT_S) {
+    /** [reconnecting]: the same channel again after a stall, which keeps count of reconnections. */
+    private fun playLive(newIndex: Int, announce: Boolean, waitSecs: Long = LIVE_WAIT_S, reconnecting: Boolean = false) {
         val p = player ?: return
         index = newIndex
         ui.failure = null
+        if (!reconnecting) reconnects = 0
         p.setMediaSource(liveSource(items[index], waitSecs))
         p.prepare()
         p.playWhenReady = true
@@ -401,6 +426,58 @@ class PlayerActivity : ComponentActivity() {
         recorded = false
         recordIfLongEnough()
         loadAspect()
+        stalledSince = null
+        readySince = null
+        playedThisStream = false
+        ui.bufferingNote = null
+    }
+
+    /**
+     * Twice a second while it's buffering: after a few seconds, says why (StallAdvice); a live
+     * channel that had been playing and stays stalled is reconnected, since a stalled stream rarely
+     * recovers on the same connection. That's what clearing a Fire TV's cache did, by accident.
+     */
+    private fun checkStall(p: ExoPlayer) {
+        val now = SystemClock.elapsedRealtime()
+        // Playing steadily for a minute: reconnections start counting afresh.
+        if (p.playbackState == Player.STATE_READY && readySince?.let { now - it >= 60_000 } == true) reconnects = 0
+        while (dropped.isNotEmpty() && now - dropped.first().first > 30_000) dropped.removeFirst()
+        val since = stalledSince
+        if (since == null || !p.playWhenReady || ui.failure != null) {
+            ui.bufferingNote = null
+            return
+        }
+        val stalledMs = now - since
+        if (stalledMs < StallAdvice.NOTE_AFTER_MS) return
+        val free = DeviceHealth.freeBytes(this)
+        val cause = StallAdvice.cause(
+            bandwidthBps = measuredBandwidth(p),
+            streamBps = streamBitrate(p),
+            lowMemory = DeviceHealth.lowMemory(this),
+            freeBytes = free,
+            droppedFrames = dropped.sumOf { it.second },
+        )
+        ui.bufferingNote = StallAdvice.note(cause, free, DeviceHealth.isFireTv)
+        if (StallAdvice.reconnect(cause, live, playedThisStream, stalledMs, reconnects)) {
+            reconnects++
+            showMessage("Reconnecting to ${items[index].name}…")
+            playLive(index, announce = false, reconnecting = true)
+        }
+    }
+
+    /**
+     * ExoPlayer's speed estimate, where it means something: it's updated as each download ends, so
+     * for HLS (short segments) it's measured, but a plain MPEG-TS channel is one endless download
+     * and the estimate would be a guess.
+     */
+    private fun measuredBandwidth(p: ExoPlayer): Long? {
+        val hls = p.currentMediaItem?.localConfiguration?.mimeType == MimeTypes.APPLICATION_M3U8
+        return if (hls) bandwidth.bitrateEstimate.takeIf { it > 0 } else null
+    }
+
+    /** What the stream needs, from its video format, if it says. */
+    private fun streamBitrate(p: ExoPlayer): Long? = p.videoFormat?.let { f ->
+        listOf(f.bitrate, f.averageBitrate, f.peakBitrate).firstOrNull { it > 0 }?.toLong()
     }
 
     /** Continue watching follows what's playing once it counts: a brief or accidental play leaves it as it was. */
@@ -452,6 +529,7 @@ class PlayerActivity : ComponentActivity() {
                 ui.nextPromptSecs = if (p.duration == C.TIME_UNSET || p.playbackState != Player.STATE_READY) null else PlaybackRules.promptSeconds(
                     p.duration, p.currentPosition, p.hasNextMediaItem(), playbackSettings.autoNext, promptDismissed, live,
                 )
+                checkStall(p)
             }
             if (++ticks % 20 == 0) saveProgress()
             handler.postDelayed(this, 500)
@@ -475,6 +553,24 @@ class PlayerActivity : ComponentActivity() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             ui.buffering = playbackState == Player.STATE_BUFFERING
+            val now = SystemClock.elapsedRealtime()
+            when (playbackState) {
+                Player.STATE_READY -> {
+                    playedThisStream = true
+                    readySince = now
+                    stalledSince = null
+                    ui.bufferingNote = null
+                }
+                Player.STATE_BUFFERING -> {
+                    readySince = null
+                    if (stalledSince == null) stalledSince = now
+                }
+                else -> {
+                    readySince = null
+                    stalledSince = null
+                    ui.bufferingNote = null
+                }
+            }
             updateKeepAwake()
         }
 
