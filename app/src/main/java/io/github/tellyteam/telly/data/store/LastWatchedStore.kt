@@ -121,8 +121,18 @@ class LastWatchedStore(private val context: Context, scope: String? = null) {
         persist(history.take(MAX_ENTRIES))
     }
 
-    /** Empties Continue watching as part of clearing watch progress; linked devices follow. */
-    fun clearProgress(now: Long = System.currentTimeMillis()) = replace(emptyList(), emptyMap(), now)
+    /**
+     * Empties Continue watching as part of clearing watch progress. Only a [linked] device records
+     * when: that's what clears the other devices. Cleared before linking, it's this device's alone,
+     * and linking later mustn't empty everyone's Continue watching.
+     */
+    fun clearProgress(linked: Boolean, now: Long = System.currentTimeMillis()) =
+        replace(emptyList(), emptyMap(), if (linked) now else cleared)
+
+    /** About to link: a clear made before (or in another household) is forgotten rather than shared. */
+    fun forgetClear() {
+        if (cleared != 0L) prefs.edit().putLong(CLEARED, 0).apply()
+    }
 
     private fun setRemoved(updated: Map<String, Long>) {
         removed = updated
