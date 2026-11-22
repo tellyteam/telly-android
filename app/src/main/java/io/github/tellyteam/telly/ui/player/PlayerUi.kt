@@ -90,6 +90,8 @@ class PlayerUiState {
     var subtitles by mutableStateOf(emptyList<TrackOption>())
     var banner by mutableStateOf(false)
     var message by mutableStateOf<String?>(null)
+    /** Why it's buffering, once it has for a few seconds (StallAdvice); null otherwise. */
+    var bufferingNote by mutableStateOf<String?>(null)
     /** A stream that didn't play: what went wrong, with Try again, Next channel and Close. */
     var failure by mutableStateOf<Failure?>(null)
     /** A phone or tablet: the controls also answer to touch, and there's a close button. */
@@ -136,6 +138,16 @@ fun PlayerUi(state: PlayerUiState, provider: Provider?, actions: PlayerActions, 
 
         if (state.buffering && !state.overlay && state.failure == null) {
             CircularProgressIndicator(color = Telly.Accent, modifier = Modifier.align(Alignment.Center))
+            state.bufferingNote?.let {
+                Text(
+                    it,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).padding(top = 110.dp).widthIn(max = 560.dp)
+                        .clip(Telly.ControlShape).background(Color(0xCC101418)).padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+            }
         }
 
         // The small credits prompt (overlay hidden); the overlay has its own Next button.
