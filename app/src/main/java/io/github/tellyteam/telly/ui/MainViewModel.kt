@@ -38,6 +38,8 @@ import io.github.tellyteam.telly.data.Source
 import io.github.tellyteam.telly.data.xtream.XtreamParser
 import io.github.tellyteam.telly.data.store.FavouritesStore
 import io.github.tellyteam.telly.data.store.LastWatchedStore
+import io.github.tellyteam.telly.data.DeviceHealth
+import io.github.tellyteam.telly.data.StallAdvice
 import io.github.tellyteam.telly.data.store.ProviderStore
 import io.github.tellyteam.telly.data.store.SavedProvider
 import io.github.tellyteam.telly.data.store.Scoped
@@ -312,6 +314,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 loadFilms()
                 loadSeries()
                 remindIfExpiring()
+                remindIfNearlyFull()
             }
         }
     }
@@ -1029,6 +1032,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 (_account.value as? Load.Done) ?: Load.Failed("Couldn't reach your provider just now.")
             }
         }
+    }
+
+    /** Once a day while the device is nearly full, which makes streams stutter: "Your Fire TV is nearly full (320 MB free)…". */
+    private fun remindIfNearlyFull() {
+        val app = getApplication<Application>()
+        val text = StallAdvice.storageReminder(DeviceHealth.freeBytes(app), DeviceHealth.isFireTv) ?: return
+        val prefs = app.getSharedPreferences("device", Context.MODE_PRIVATE)
+        val today = System.currentTimeMillis() / DAY_MS
+        if (prefs.getLong("storageRemindedDay", -1) == today) return
+        prefs.edit().putLong("storageRemindedDay", today).apply()
+        Toast.makeText(app, text, Toast.LENGTH_LONG).show()
     }
 
     /** Once a day, in the last week of a subscription: "Your subscription ends in 3 days". */

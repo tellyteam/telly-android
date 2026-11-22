@@ -37,6 +37,8 @@ import io.github.tellyteam.telly.BuildConfig
 import io.github.tellyteam.telly.ui.SyncStatus
 import io.github.tellyteam.telly.ui.UpdateState
 import io.github.tellyteam.telly.data.AccountText
+import io.github.tellyteam.telly.data.DeviceHealth
+import io.github.tellyteam.telly.data.StallAdvice
 import io.github.tellyteam.telly.data.PlaybackSettings
 import io.github.tellyteam.telly.data.Provider
 import io.github.tellyteam.telly.data.store.CategoryKind
@@ -357,6 +359,20 @@ fun SettingsScreen(
                 color = Telly.Muted,
             )
             Text("To update: open Downloader and enter code $DOWNLOADER_CODE", fontSize = 13.sp, color = Telly.Muted)
+            // Free space, read as Settings opens: a nearly full Fire TV stutters, whatever telly does.
+            val context = LocalContext.current
+            val free = remember { DeviceHealth.freeBytes(context) }
+            if (free != null) {
+                val device = if (DeviceHealth.isFireTv) "this Fire TV" else "this device"
+                val low = free < StallAdvice.LOW_STORAGE_BYTES
+                Text(
+                    "Free space on $device: ${StallAdvice.size(free)}" +
+                        if (low) ". That's nearly full, which can make streams stutter: remove apps you don't use, or clear other apps' caches in Settings." else "",
+                    fontSize = 13.sp,
+                    color = if (low) Telly.Accent else Telly.Muted,
+                    modifier = Modifier.widthIn(max = 560.dp),
+                )
+            }
         }
     }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
