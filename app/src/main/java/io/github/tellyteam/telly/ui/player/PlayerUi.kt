@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -50,6 +51,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,9 +90,14 @@ class PlayerUiState {
     var subtitles by mutableStateOf(emptyList<TrackOption>())
     var banner by mutableStateOf(false)
     var message by mutableStateOf<String?>(null)
+    /** A stream that didn't play: what went wrong, with Try again, Next channel and Close. */
+    var failure by mutableStateOf<Failure?>(null)
     /** A phone or tablet: the controls also answer to touch, and there's a close button. */
     var touch by mutableStateOf(false)
 }
+
+/** [title] says what happened, [detail] what may be behind it; [nextChannel] offers the next one. */
+class Failure(val title: String, val detail: String, val nextChannel: Boolean)
 
 class PlayerActions(
     val playPause: () -> Unit,
@@ -104,6 +111,10 @@ class PlayerActions(
     /** Jumps to a point in a film or episode, 0..1 along it. */
     val seekToFraction: (Float) -> Unit = {},
     val close: () -> Unit = {},
+    /** After a failure: the same stream again, waiting longer for it. */
+    val retry: () -> Unit = {},
+    /** After a live channel's failure: the next channel. */
+    val nextChannel: () -> Unit = {},
 )
 
 @Composable
@@ -123,7 +134,7 @@ fun PlayerUi(state: PlayerUiState, provider: Provider?, actions: PlayerActions, 
             )
         }
 
-        if (state.buffering && !state.overlay) {
+        if (state.buffering && !state.overlay && state.failure == null) {
             CircularProgressIndicator(color = Telly.Accent, modifier = Modifier.align(Alignment.Center))
         }
 
@@ -163,6 +174,8 @@ fun PlayerUi(state: PlayerUiState, provider: Provider?, actions: PlayerActions, 
         ) {
             SidePanel(state, actions)
         }
+
+        state.failure?.let { FailurePanel(it, actions) }
 
         state.message?.let {
             Text(
@@ -373,6 +386,29 @@ private fun Option(label: String, selected: Boolean, modifier: Modifier, onClick
         Text(label, fontSize = 14.sp, color = if (focused) Color.White else Color(0xFFD3DAE3), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         if (selected) Text("✓", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Telly.Accent)
     }
+}
+
+/**
+ * A stream that didn't play. A remote can't point, so Try again takes focus as it appears: OK
+ * retries and the arrows reach Next channel and Close (as on LG and Samsung).
+ */
+@Composable
+private fun FailurePanel(failure: Failure, actions: PlayerActions) {
+    val tryAgain = remember { FocusRequester() }
+    Column(
+        Modifier.fillMaxSize().background(Color(0xE6070A0F)).padding(40.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(failure.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
+        Text(failure.detail, fontSize = 14.sp, color = Telly.Muted, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 520.dp))
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ControlButton("Try again", Modifier.focusRequester(tryAgain), actions.retry)
+            if (failure.nextChannel) ControlButton("Next channel", Modifier, actions.nextChannel)
+            ControlButton("Close", Modifier, actions.close)
+        }
+    }
+    LaunchedEffect(failure) { runCatching { tryAgain.requestFocus() } }
 }
 
 @Composable

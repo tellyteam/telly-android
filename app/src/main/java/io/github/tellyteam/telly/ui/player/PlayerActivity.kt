@@ -35,6 +35,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import io.github.tellyteam.telly.container
 import io.github.tellyteam.telly.data.Channel
+import java.util.concurrent.TimeUnit
 import io.github.tellyteam.telly.data.PlaybackRules
 import io.github.tellyteam.telly.data.PlaybackSettings
 import io.github.tellyteam.telly.data.Provider
@@ -103,6 +104,8 @@ class PlayerActivity : ComponentActivity() {
         },
         seekToFraction = { f -> seekToFraction(f) },
         close = { finish() },
+        retry = { retry() },
+        nextChannel = { playLive(Math.floorMod(index + 1, items.size), announce = true) },
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -215,6 +218,16 @@ class PlayerActivity : ComponentActivity() {
             }
             resetHide()
             return true
+        }
+        // A failure: its buttons have focus, so the arrows and OK are theirs. Back leaves, and the
+        // channel buttons still change channel.
+        if (ui.failure != null) {
+            return when (code) {
+                KeyEvent.KEYCODE_BACK -> { finish(); true }
+                KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> live && run { playLive(Math.floorMod(index + 1, items.size), announce = true); true }
+                KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> live && run { playLive(Math.floorMod(index - 1, items.size), announce = true); true }
+                else -> false
+            }
         }
         if (ui.panel != Panel.NONE) {
             if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_MENU) {
@@ -336,10 +349,20 @@ class PlayerActivity : ComponentActivity() {
 
     // ---- Playback ----
 
-    private fun playLive(newIndex: Int, announce: Boolean) {
+    /**
+     * Live channels get longer to start than OkHttp's usual 30 seconds: during a big match a
+     * provider's sports channels can take most of a minute, in every app. Try again waits longer
+     * still, for a provider that's very slow but does get there.
+     */
+    private fun liveSource(item: Channel, waitSecs: Long) =
+        DefaultMediaSourceFactory(OkHttpDataSource.Factory(container.http.newBuilder().readTimeout(waitSecs, TimeUnit.SECONDS).build()))
+            .createMediaSource(mediaItem(item))
+
+    private fun playLive(newIndex: Int, announce: Boolean, waitSecs: Long = LIVE_WAIT_S) {
         val p = player ?: return
         index = newIndex
-        p.setMediaItem(mediaItem(items[index]))
+        ui.failure = null
+        p.setMediaSource(liveSource(items[index], waitSecs))
         p.prepare()
         p.playWhenReady = true
         onItemChanged()
@@ -487,7 +510,41 @@ class PlayerActivity : ComponentActivity() {
                 return
             }
             val blocked = generateSequence<Throwable>(error) { it.cause }.firstOrNull { it is CleartextBlockedException }
-            showMessage(blocked?.message ?: "Can't play ${items[p.currentMediaItemIndex].name} (${error.errorCodeName})")
+            ui.failure = failureFor(error, blocked?.message, items.getOrNull(p.currentMediaItemIndex)?.name.orEmpty())
+            ui.overlay = false
+            ui.banner = false
+            ui.panel = Panel.NONE
+            ui.nextPromptSecs = null
+        }
+    }
+
+    /** What to say about a stream that didn't play, in the same words as on LG and Samsung. */
+    private fun failureFor(error: PlaybackException, blocked: String?, name: String): Failure {
+        val nextChannel = live && items.size > 1
+        val slow = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+        val format = error.errorCode in 3000..4999 // parsing and decoding
+        return when {
+            blocked != null -> Failure(blocked, "telly keeps unencrypted connections off unless you allow them for a provider.", nextChannel)
+            slow -> Failure(
+                if (live) "The channel took too long to start." else "The video took too long to start.",
+                "Your provider may be busy: during big events streams can be slow to start. Try again in a moment.",
+                nextChannel,
+            )
+            format -> Failure("This video's format can't be played here.", "Some providers' files use formats this device's video engine can't decode.", nextChannel)
+            live -> Failure("Can't play $name.", "The channel may be off air, or your provider may limit how many streams play at once.", nextChannel)
+            else -> Failure("Can't play $name.", "Your provider didn't send it (${error.errorCodeName}). Try again in a moment.", nextChannel)
+        }
+    }
+
+    /** Try again: the same stream, from where it was, waiting longer for it to start. */
+    private fun retry() {
+        val p = player ?: return
+        ui.failure = null
+        if (live) {
+            playLive(index, announce = false, waitSecs = RETRY_WAIT_S)
+        } else {
+            p.prepare()
+            p.playWhenReady = true
         }
     }
 
@@ -631,6 +688,8 @@ class PlayerActivity : ComponentActivity() {
         private const val OVERLAY_MS = 5_000L
         private const val BANNER_MS = 4_000L
         private const val MESSAGE_MS = 4_000L
+        private const val LIVE_WAIT_S = 60L
+        private const val RETRY_WAIT_S = 180L
         private val OK_KEYS = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER)
 
         /** [heading] labels it under "pick up where you left off": "Live TV", "Film" or the series name. */
