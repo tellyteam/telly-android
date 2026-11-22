@@ -686,7 +686,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Forgets every position and empties Continue watching (My List stays); linked devices follow. */
     fun clearProgress() {
         container.watchProgress.clear()
-        container.lastWatched.clearProgress()
+        container.lastWatched.clearProgress(linked = _sync.value.config != null)
         container.watched.clear()
         syncNow(force = true)
     }
@@ -698,6 +698,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val normal = if (code == null) SyncCrypto.newCode() else SyncCrypto.normaliseCode(code)
             ?: return "That code isn't right: it's 16 letters and numbers, like ABCD-EFGH-JKMN-PQRS."
         val config = SyncConfig(normal, _sync.value.config?.device ?: SyncCrypto.newDeviceId(), SyncSettings.RELAY)
+        forgetUnlinkedClears()
         container.syncSettings.save(config)
         _sync.value = SyncStatus(config)
         val error = runSync(config)?.let {
@@ -740,11 +741,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val pending = container.syncSettings.loadPending() ?: return
         val plus = runCatching { container.syncClient.plus(pending.relay, SyncCrypto.deriveKeys(pending.code), pending.device) }.getOrNull() ?: return
         if (plus.until == null || _sync.value.config != null) return
+        forgetUnlinkedClears()
         container.syncSettings.save(pending)
         container.syncSettings.clearPending()
         _sync.value = SyncStatus(pending, plus = plus)
         _syncUnlocked.value = true
         syncNow(force = true)
+    }
+
+    /**
+     * About to link: a clear made before (or in another household) was this device's own, so it's
+     * forgotten rather than shared, which would empty every linked device's Continue watching.
+     */
+    private fun forgetUnlinkedClears() {
+        val app = getApplication<Application>()
+        for (saved in _providers.value) {
+            if (saved.id == _activeId.value) container.lastWatched.forgetClear() else LastWatchedStore(app, saved.id).forgetClear()
+        }
     }
 
     // ---- Joining, and telly Plus after the first watch ----
